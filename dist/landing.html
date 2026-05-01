@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Score street cricket matches ball by ball. Works offline, free forever, no sign-up needed." />
+  <meta property="og:title" content="CricScore — Street Cricket Scorer" />
+  <meta property="og:description" content="The free, offline-first cricket scorer built for street cricket." />
+  <meta property="og:image" content="/icons/icon-512.png" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <title>CricScore — Score Street Cricket Like a Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Dark theme (default) ── */
+    :root {
+      --bg:        #080f09;
+      --surface:   #0e1a10;
+      --surface2:  #162019;
+      --border:    rgba(255,255,255,0.07);
+      --border2:   rgba(255,255,255,0.12);
+      --gold:      #f5c842;
+      --gold-dk:   #c49a10;
+      --gold-gl:   rgba(245,200,66,0.10);
+      --runs:      #5ecf6a;
+      --four:      #3fc8e4;
+      --wicket:    #f0556a;
+      --muted:     #8db88f;
+      --muted2:    rgba(141,184,143,0.45);
+      --white:     #eef5ee;
+      --noise-op:  0.4;
+      --grid-col:  rgba(255,255,255,0.022);
+      --nav-bg:    rgba(8,15,9,0.78);
+      --phone-bg:  #060e08;
+      --sim-bg:    #0c1e0f;
+      --theme-icon: '☀️';
+    }
+
+    /* ── Light theme ── */
+    [data-theme="light"] {
+      --bg:        #f2f7f2;
+      --surface:   #ffffff;
+      --surface2:  #e8f2e8;
+      --border:    rgba(0,60,10,0.09);
+      --border2:   rgba(0,60,10,0.15);
+      --gold:      #9a6e00;
+      --gold-dk:   #7a5500;
+      --gold-gl:   rgba(154,110,0,0.07);
+      --runs:      #1f7a2a;
+      --four:      #0f6880;
+      --wicket:    #b02030;
+      --muted:     #4a7050;
+      --muted2:    rgba(60,90,60,0.5);
+      --white:     #0c1a0c;
+      --noise-op:  0.15;
+      --grid-col:  rgba(0,0,0,0.025);
+      --nav-bg:    rgba(242,247,242,0.88);
+      --phone-bg:  #1a2e1c;
+      --sim-bg:    #1a2e1c;
+      --theme-icon: '🌙';
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Nunito', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--white);
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.35s, color 0.35s;
+    }
+
+    /* ── NOISE TEXTURE overlay ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 9999;
+      opacity: var(--noise-op);
+    }
+
+    /* ── GRID LINES bg ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(var(--grid-col) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-col) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none; z-index: 0;
+      mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 0%, transparent 100%);
+    }
+
+    /* ── Reveal ── */
+    .reveal {
+      opacity: 0; transform: translateY(28px);
+      transition: opacity 0.65s cubic-bezier(0.16,1,0.3,1), transform 0.65s cubic-bezier(0.16,1,0.3,1);
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+    .d1 { transition-delay: 0.08s; }
+    .d2 { transition-delay: 0.16s; }
+    .d3 { transition-delay: 0.24s; }
+    .d4 { transition-delay: 0.32s; }
+    .d5 { transition-delay: 0.40s; }
+
+    /* ══════════════════════════════════════
+       NAV
+    ══════════════════════════════════════ */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 28px;
+      background: var(--nav-bg);
+      backdrop-filter: blur(24px) saturate(1.8);
+      -webkit-backdrop-filter: blur(24px) saturate(1.8);
+      border-bottom: 1px solid var(--border);
+      transition: padding 0.3s, background 0.35s, border-color 0.35s;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none;
+    }
+    .nav-brand img { width: 30px; height: 30px; border-radius: 8px; }
+    .nav-brand-name {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 21px; letter-spacing: 2px; color: var(--gold);
+      transition: color 0.35s;
+    }
+    .nav-right { display: flex; align-items: center; gap: 8px; }
+    .nav-link {
+      font-size: 13px; font-weight: 700; color: var(--muted);
+      text-decoration: none; padding: 6px 12px; border-radius: 8px;
+      transition: color 0.2s, background 0.2s;
+      display: none;
+    }
+    @media (min-width: 560px) { .nav-link { display: block; } }
+    .nav-link:hover { color: var(--white); background: rgba(128,128,128,0.08); }
+
+    /* Theme toggle */
+    .theme-toggle {
+      width: 34px; height: 34px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; cursor: pointer;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .theme-toggle:hover { background: rgba(128,128,128,0.08); border-color: var(--border2); }
+
+    .nav-cta {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 20px; background: var(--gold); color: #0d1a00;
+      font-weight: 900; font-size: 13px; border-radius: 10px;
+      text-decoration: none; letter-spacing: 0.3px;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: 0 2px 16px rgba(200,160,0,0.25);
+    }
+    .nav-cta:hover {
+      background: #ffd84d; transform: translateY(-1px);
+      box-shadow: 0 4px 24px rgba(200,160,0,0.4);
+    }
+
+    /* ══════════════════════════════════════
+       HERO
+    ══════════════════════════════════════ */
+    .hero {
+      position: relative;
+      min-height: 100svh;
+      display: flex; align-items: center; justify-content: center;
+      padding: 110px 24px 80px;
+      overflow: hidden; isolation: isolate;
+    }
+
+    /* Mesh gradient bg */
+    .hero-mesh {
+      position: absolute; inset: 0; pointer-events: none; z-index: -1;
+      background:
+        radial-gradient(ellipse 90% 55% at 50% -10%, rgba(24,68,30,0.85) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 40% at 80% 80%,  rgba(245,200,66,0.05) 0%, transparent 55%),
+        radial-gradient(ellipse 40% 35% at 10% 60%,  rgba(63,200,228,0.04) 0%, transparent 55%);
+    }
+    [data-theme="light"] .hero-mesh {
+      background:
+        radial-gradient(ellipse 90% 55% at 50% -10%, rgba(180,220,180,0.6) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 40% at 80% 80%,  rgba(154,110,0,0.05) 0%, transparent 55%);
+    }
+
+    /* Floating orbs */
+    .orb {
+      position: absolute; border-radius: 50%; pointer-events: none; z-index: -1;
+      filter: blur(60px);
+    }
+    .orb-1 { width: 400px; height: 400px; background: rgba(24,68,30,0.7);  top: -120px; left: 50%; transform: translateX(-50%); animation: drift1 12s ease-in-out infinite; }
+    .orb-2 { width: 250px; height: 250px; background: rgba(245,200,66,0.07); bottom: 5%; right: -60px; animation: drift2 9s ease-in-out infinite 3s; }
+    .orb-3 { width: 180px; height: 180px; background: rgba(63,200,228,0.06); top: 30%; left: -40px; animation: drift3 11s ease-in-out infinite 1.5s; }
+    [data-theme="light"] .orb-1 { background: rgba(180,220,180,0.5); }
+    [data-theme="light"] .orb-2 { background: rgba(154,110,0,0.06); }
+    [data-theme="light"] .orb-3 { background: rgba(31,122,42,0.07); }
+    @keyframes drift1 { 0%,100% { transform: translateX(-50%) translate(0,0); } 33% { transform: translateX(-50%) translate(8px,-16px); } 66% { transform: translateX(-50%) translate(-6px,10px); } }
+    @keyframes drift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-14px,-22px); } }
+    @keyframes drift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(18px,-14px); } }
+
+    /* Hero inner — two-column on desktop */
+    .hero-inner {
+      width: 100%; max-width: 1100px; margin: 0 auto;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 52px;
+    }
+    @media (min-width: 900px) {
+      .hero-inner {
+        flex-direction: row; align-items: center;
+        gap: 64px; text-align: left;
+      }
+    }
+
+    /* Hero text side */
+    .hero-text {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    @media (min-width: 900px) { .hero-text { align-items: flex-start; } }
+
+    /* App icon */
+    .hero-icon-wrap { position: relative; margin-bottom: 28px; }
+    .hero-icon {
+      width: 88px; height: 88px; border-radius: 22px;
+      border: 1.5px solid rgba(245,200,66,0.28);
+      box-shadow: 0 0 0 8px rgba(245,200,66,0.06), 0 12px 48px rgba(0,0,0,0.5);
+      display: block; position: relative; z-index: 1;
+      animation: iconGlow 4s ease-in-out infinite;
+    }
+    [data-theme="light"] .hero-icon {
+      border-color: rgba(154,110,0,0.3);
+      box-shadow: 0 0 0 8px rgba(154,110,0,0.06), 0 12px 40px rgba(0,0,0,0.15);
+    }
+    .hero-icon-ring {
+      position: absolute; inset: -12px; border-radius: 34px;
+      border: 1px solid rgba(245,200,66,0.14);
+      animation: ringPulse 4s ease-in-out infinite;
+    }
+    @keyframes iconGlow {
+      0%,100% { box-shadow: 0 0 0 8px rgba(245,200,66,0.05), 0 12px 48px rgba(0,0,0,0.5); }
+      50%      { box-shadow: 0 0 0 14px rgba(245,200,66,0.10), 0 12px 48px rgba(0,0,0,0.5); }
+    }
+    @keyframes ringPulse {
+      0%,100% { opacity: 0.5; transform: scale(1); }
+      50%      { opacity: 1;   transform: scale(1.05); }
+    }
+
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 14px; border-radius: 99px;
+      background: var(--gold-gl); border: 1px solid rgba(200,160,0,0.28);
+      color: var(--gold); font-size: 11px; font-weight: 800;
+      letter-spacing: 2px; text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .hero-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); animation: blink 2s ease-in-out infinite; }
+    @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .hero-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(54px, 12vw, 96px);
+      line-height: 0.93; letter-spacing: 2px;
+      margin-bottom: 20px;
+    }
+    .hero-title-line2 {
+      display: block;
+      background: linear-gradient(135deg, var(--gold) 0%, #ffeaa0 50%, var(--gold) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      background-size: 200% auto;
+      animation: goldShimmer 4s linear infinite;
+    }
+    @keyframes goldShimmer {
+      0%   { background-position: 0% center; }
+      100% { background-position: 200% center; }
+    }
+
+    .hero-sub {
+      font-size: clamp(15px, 2.5vw, 18px);
+      color: var(--muted); font-weight: 600;
+      max-width: 440px; line-height: 1.65;
+      margin-bottom: 36px;
+    }
+
+    .hero-actions {
+      display: flex; flex-direction: column; align-items: stretch;
+      gap: 10px; width: 100%; max-width: 280px;
+    }
+    @media (min-width: 900px) { .hero-actions { align-items: flex-start; } }
+
+    .btn-gold {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 17px 28px;
+      background: var(--gold); color: #0d1a00;
+      font-weight: 900; font-size: 16px; border-radius: 14px;
+      text-decoration: none; letter-spacing: 0.2px;
+      box-shadow: 0 4px 28px rgba(200,160,0,0.35);
+      transition: all 0.2s;
+    }
+    .btn-gold:hover { background: #ffd84d; transform: translateY(-2px); box-shadow: 0 8px 36px rgba(200,160,0,0.5); }
+    .btn-ghost {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 15px 28px;
+      background: transparent; color: var(--white);
+      font-weight: 700; font-size: 14px; border-radius: 14px;
+      text-decoration: none; border: 1px solid var(--border2);
+      transition: all 0.2s;
+    }
+    .btn-ghost:hover { background: rgba(128,128,128,0.08); border-color: var(--muted); }
+
+    .hero-note { margin-top: 8px; font-size: 12px; color: var(--muted2); font-weight: 600; }
+
+    /* Hero phone side (desktop only) */
+    .hero-phone-wrap {
+      display: none;
+      flex-shrink: 0;
+    }
+    @media (min-width: 900px) {
+      .hero-phone-wrap {
+        display: flex; flex-direction: column; align-items: center;
+        position: relative;
+      }
+    }
+    .hero-phone-glow {
+      position: absolute; bottom: -60px; left: 50%; transform: translateX(-50%);
+      width: 280px; height: 80px;
+      background: radial-gradient(ellipse 100% 100% at 50% 50%, rgba(20,80,30,0.6) 0%, transparent 70%);
+      filter: blur(20px); pointer-events: none;
+    }
+    [data-theme="light"] .hero-phone-glow {
+      background: radial-gradient(ellipse 100% 100% at 50% 50%, rgba(0,120,40,0.18) 0%, transparent 70%);
+    }
+
+    /* Float animation for phone */
+    .phone-float { animation: phoneFloat 6s ease-in-out infinite; }
+    @keyframes phoneFloat {
+      0%,100% { transform: translateY(0); }
+      50%      { transform: translateY(-12px); }
+    }
+
+    /* ══════════════════════════════════════
+       TRUST TICKER
+    ══════════════════════════════════════ */
+    .trust-bar {
+      position: relative; padding: 14px 0; overflow: hidden;
+      border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      background: rgba(14,26,16,0.5);
+      transition: background 0.35s;
+    }
+    [data-theme="light"] .trust-bar { background: rgba(220,240,220,0.5); }
+    .trust-track {
+      display: flex; gap: 48px; align-items: center;
+      white-space: nowrap;
+      animation: scrollLeft 24s linear infinite;
+      width: max-content;
+    }
+    .trust-bar:hover .trust-track { animation-play-state: paused; }
+    @keyframes scrollLeft {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .trust-item {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 700; color: var(--muted);
+    }
+    .trust-item span { font-size: 16px; }
+    .trust-bar::before, .trust-bar::after {
+      content: ''; position: absolute; top: 0; bottom: 0; width: 80px; z-index: 2; pointer-events: none;
+    }
+    .trust-bar::before { left: 0;  background: linear-gradient(90deg,  var(--bg), transparent); }
+    .trust-bar::after  { right: 0; background: linear-gradient(-90deg, var(--bg), transparent); }
+
+    /* ══════════════════════════════════════
+       PHONE component (shared)
+    ══════════════════════════════════════ */
+    .phone {
+      position: relative;
+      width: min(272px, 88vw);
+      background: var(--phone-bg);
+      border-radius: 46px;
+      border: 1.5px solid rgba(255,255,255,0.13);
+      box-shadow:
+        0 0 0 1px rgba(0,0,0,0.7),
+        0 40px 100px rgba(0,0,0,0.75),
+        0 0 80px rgba(20,80,32,0.3),
+        inset 0 1px 0 rgba(255,255,255,0.07);
+      padding: 14px 7px 10px;
+    }
+    [data-theme="light"] .phone {
+      border-color: rgba(0,80,20,0.25);
+      box-shadow:
+        0 0 0 1px rgba(0,40,0,0.12),
+        0 30px 80px rgba(0,0,0,0.2),
+        0 0 60px rgba(0,100,40,0.12),
+        inset 0 1px 0 rgba(255,255,255,0.4);
+    }
+    .phone::before {
+      content: '';
+      position: absolute; right: -3px; top: 100px;
+      width: 3px; height: 60px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 0 2px 2px 0;
+    }
+    .phone-pill {
+      width: 72px; height: 20px;
+      background: var(--phone-bg);
+      border-radius: 0 0 12px 12px;
+      margin: 0 auto 6px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .phone-pill::after {
+      content: ''; width: 44px; height: 4px;
+      background: rgba(255,255,255,0.12); border-radius: 2px;
+    }
+    .phone-screen {
+      background: var(--sim-bg);
+      border-radius: 32px; overflow: hidden;
+      height: 540px;
+      display: flex; flex-direction: column;
+    }
+
+    /* ── Simulated app UI ── */
+    .sim-bar {
+      background: rgba(0,0,0,0.4);
+      padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      flex-shrink: 0;
+    }
+    .sim-bar-left { display: flex; align-items: center; gap: 6px; }
+    .sim-live { width: 6px; height: 6px; border-radius: 50%; background: var(--runs); animation: blink 1.4s ease-in-out infinite; }
+    .sim-title { font-size: 11px; font-weight: 800; color: #fff; }
+    .sim-sub   { font-size: 8px;  font-weight: 600; color: rgba(141,184,143,0.8); }
+    .sim-bar-right { display: flex; gap: 6px; }
+    .sim-icon-btn {
+      width: 24px; height: 24px; border-radius: 6px;
+      background: rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: rgba(141,184,143,0.7);
+    }
+
+    .sim-scoreboard {
+      padding: 14px 14px 12px;
+      background: linear-gradient(160deg, rgba(18,58,28,0.9) 0%, rgba(8,22,12,1) 100%);
+      text-align: center; flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .sim-score {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 58px; line-height: 1; color: #fff; letter-spacing: 3px;
+    }
+    .sim-target {
+      font-size: 9px; color: #f5c842; font-weight: 800;
+      margin: 2px 0 10px; letter-spacing: 0.5px;
+    }
+    .sim-stats { display: flex; justify-content: center; gap: 18px; }
+    .sim-stat-val { font-size: 15px; font-weight: 900; color: #fff; line-height: 1; }
+    .sim-stat-lbl { font-size: 7px; color: rgba(141,184,143,0.8); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+    .sim-over {
+      display: flex; gap: 4px; justify-content: center; align-items: center;
+      padding: 8px 12px; background: rgba(0,0,0,0.28); flex-shrink: 0;
+    }
+    .sim-ball {
+      width: 26px; height: 26px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 900;
+    }
+    .b-dot  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.2); }
+    .b-run  { background: rgba(94,207,106,0.18);  color: #5ecf6a; }
+    .b-four { background: rgba(63,200,228,0.18);  color: #3fc8e4; }
+    .b-six  { background: rgba(245,200,66,0.18);  color: #f5c842; }
+    .b-out  { background: rgba(240,85,106,0.22);  color: #f0556a; }
+    .b-wd   { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.18); font-size: 8px; }
+
+    .sim-batters {
+      display: flex; gap: 6px; padding: 8px 10px; flex-shrink: 0;
+    }
+    .sim-batter {
+      flex: 1; background: rgba(0,0,0,0.28); border-radius: 10px;
+      padding: 7px 9px; border: 1px solid rgba(255,255,255,0.05);
+    }
+    .sim-batter.on { border-color: rgba(245,200,66,0.32); }
+    .sim-bname { font-size: 9px; font-weight: 800; color: #fff; }
+    .sim-bscore { font-size: 16px; font-weight: 900; color: #fff; line-height: 1.1; }
+    .sim-bballs { font-size: 7px; color: rgba(141,184,143,0.8); font-weight: 600; }
+    .sim-dot-striker {
+      display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+      background: #f5c842; margin-left: 3px; vertical-align: middle;
+    }
+
+    .sim-buttons {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;
+      padding: 6px 10px; flex-shrink: 0;
+    }
+    .sim-btn {
+      height: 38px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900;
+    }
+    .sb-0  { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.4); font-size: 14px; }
+    .sb-1  { background: rgba(94,207,106,0.14);  color: #5ecf6a; font-size: 14px; }
+    .sb-2  { background: rgba(94,207,106,0.14);  color: #5ecf6a; font-size: 14px; }
+    .sb-3  { background: rgba(94,207,106,0.14);  color: #5ecf6a; font-size: 14px; }
+    .sb-4  { background: rgba(63,200,228,0.18);  color: #3fc8e4; font-size: 14px; }
+    .sb-6  { background: rgba(245,200,66,0.18);  color: #f5c842; font-size: 16px; }
+    .sb-w  { background: rgba(240,85,106,0.18);  color: #f0556a; font-size: 9px; letter-spacing: 0.5px; }
+    .sb-wd { background: rgba(255,165,0,0.14);   color: #ffa040; font-size: 9px; }
+
+    .sim-nav {
+      display: flex; border-top: 1px solid rgba(255,255,255,0.05);
+      background: rgba(0,0,0,0.45); padding: 7px 0 4px; margin-top: auto;
+    }
+    .sim-nav-tab {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      gap: 2px; font-size: 7px; font-weight: 700; color: rgba(141,184,143,0.3);
+    }
+    .sim-nav-tab.on { color: #f5c842; }
+    .sim-nav-tab .ni { font-size: 13px; }
+
+    /* Standalone mockup section (mobile) */
+    .mockup-section {
+      padding: 72px 24px;
+      display: flex; flex-direction: column; align-items: center; gap: 40px;
+      position: relative; isolation: isolate;
+    }
+    @media (min-width: 900px) { .mockup-section { display: none; } }
+    .mockup-section::before {
+      content: ''; position: absolute; inset: 0; z-index: -1;
+      background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(16,60,24,0.4) 0%, transparent 70%);
+    }
+    [data-theme="light"] .mockup-section::before {
+      background: radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,80,20,0.08) 0%, transparent 70%);
+    }
+    .mockup-label { text-align: center; }
+    .mockup-label h2 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(28px, 6vw, 44px); letter-spacing: 1.5px; margin-bottom: 8px;
+    }
+    .mockup-label h2 em { font-style: normal; color: var(--gold); }
+    .mockup-label p { font-size: 14px; color: var(--muted); font-weight: 600; max-width: 340px; margin: 0 auto; }
+
+    /* ══════════════════════════════════════
+       FEATURES
+    ══════════════════════════════════════ */
+    .section-wrap {
+      max-width: 1000px; margin: 0 auto;
+      padding: 88px 24px;
+    }
+    .section-eye {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 800; letter-spacing: 3px;
+      text-transform: uppercase; color: var(--gold); opacity: 0.75;
+      margin-bottom: 12px;
+    }
+    .section-eye::before {
+      content: ''; width: 20px; height: 1px; background: var(--gold); opacity: 0.5;
+    }
+    .section-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(34px, 7vw, 58px); line-height: 0.95;
+      letter-spacing: 1.5px; margin-bottom: 14px;
+    }
+    .section-title em { font-style: normal; color: var(--gold); }
+    .section-sub {
+      font-size: 15px; color: var(--muted); font-weight: 600;
+      max-width: 460px; line-height: 1.65; margin-bottom: 48px;
+    }
+
+    .features-grid {
+      display: grid; grid-template-columns: 1fr; gap: 12px;
+    }
+    @media (min-width: 540px) { .features-grid { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 820px) { .features-grid { grid-template-columns: 1fr 1fr 1fr; } }
+
+    .feat {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px; padding: 26px 24px;
+      overflow: hidden;
+      transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+    }
+    /* Hover glow — generic gold */
+    .feat::before {
+      content: ''; position: absolute; inset: 0; border-radius: inherit;
+      background: radial-gradient(ellipse 80% 60% at 0% 0%, rgba(245,200,66,0.05), transparent 60%);
+      opacity: 0; transition: opacity 0.25s;
+    }
+    .feat:hover { border-color: rgba(200,160,0,0.22); transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+    .feat:hover::before { opacity: 1; }
+
+    /* Per-color hover glows */
+    .feat[data-glow="green"]::before  { background: radial-gradient(ellipse 80% 60% at 0% 0%, rgba(94,207,106,0.06), transparent 60%); }
+    .feat[data-glow="blue"]::before   { background: radial-gradient(ellipse 80% 60% at 0% 0%, rgba(63,200,228,0.06), transparent 60%); }
+    .feat[data-glow="red"]::before    { background: radial-gradient(ellipse 80% 60% at 0% 0%, rgba(240,85,106,0.06), transparent 60%); }
+    .feat[data-glow="green"]:hover  { border-color: rgba(94,207,106,0.22); }
+    .feat[data-glow="blue"]:hover   { border-color: rgba(63,200,228,0.22); }
+    .feat[data-glow="red"]:hover    { border-color: rgba(240,85,106,0.22); }
+
+    /* Featured (larger) card */
+    .feat-xl {
+      grid-column: 1 / -1;
+      display: flex; flex-direction: column; gap: 14px;
+      background: linear-gradient(135deg, rgba(18,50,24,0.7), rgba(10,26,14,0.9));
+      border-color: rgba(245,200,66,0.14);
+    }
+    [data-theme="light"] .feat-xl {
+      background: linear-gradient(135deg, rgba(210,240,210,0.7), rgba(240,248,240,0.9));
+    }
+    @media (min-width: 820px) { .feat-xl { flex-direction: row; align-items: center; } }
+
+    .feat-icon { font-size: 34px; margin-bottom: 14px; display: block; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3)); }
+    .feat-xl .feat-icon { font-size: 52px; margin-bottom: 0; flex-shrink: 0; }
+    .feat-title { font-weight: 900; font-size: 16px; color: var(--white); margin-bottom: 8px; }
+    .feat-xl .feat-title { font-size: 20px; margin-bottom: 10px; }
+    .feat-desc { font-size: 13px; color: var(--muted); line-height: 1.65; font-weight: 600; }
+    .feat-xl .feat-desc { font-size: 14px; }
+
+    .feat-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 99px; margin-top: 10px;
+      font-size: 10px; font-weight: 800; letter-spacing: 0.5px;
+    }
+    .tag-gold  { background: rgba(200,160,0,0.10); color: var(--gold);   border: 1px solid rgba(200,160,0,0.2); }
+    .tag-green { background: rgba(30,130,50,0.10); color: var(--runs);   border: 1px solid rgba(30,130,50,0.2); }
+    .tag-blue  { background: rgba(30,140,180,0.10); color: var(--four);  border: 1px solid rgba(30,140,180,0.2); }
+    .tag-red   { background: rgba(180,40,60,0.10);  color: var(--wicket); border: 1px solid rgba(180,40,60,0.2); }
+
+    /* ══════════════════════════════════════
+       STAT STRIP
+    ══════════════════════════════════════ */
+    .stats-section { padding: 0 24px 88px; }
+    .stats-inner {
+      max-width: 900px; margin: 0 auto;
+      background: linear-gradient(135deg, rgba(18,50,24,0.55), rgba(10,22,14,0.75));
+      border: 1px solid var(--border);
+      border-radius: 24px; padding: 48px 32px;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 32px; text-align: center;
+      transition: background 0.35s;
+    }
+    [data-theme="light"] .stats-inner {
+      background: linear-gradient(135deg, rgba(200,230,200,0.5), rgba(240,248,240,0.8));
+    }
+    @media (min-width: 600px) { .stats-inner { grid-template-columns: repeat(4, 1fr); } }
+    .stat-n {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 54px; color: var(--gold); line-height: 1;
+      letter-spacing: 1px;
+    }
+    .stat-n[data-count] { transition: none; }
+    .stat-l { font-size: 12px; color: var(--muted); font-weight: 700; margin-top: 6px; letter-spacing: 0.5px; }
+
+    /* ══════════════════════════════════════
+       HOW IT WORKS
+    ══════════════════════════════════════ */
+    .steps-grid {
+      display: grid; grid-template-columns: 1fr; gap: 12px;
+    }
+    @media (min-width: 680px) { .steps-grid { grid-template-columns: 1fr 1fr 1fr; gap: 16px; } }
+
+    .step-card {
+      position: relative;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 28px 26px;
+      transition: background 0.35s, border-color 0.35s, box-shadow 0.35s;
+    }
+    .step-card:hover {
+      border-color: var(--border2);
+      box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+    }
+    [data-theme="light"] .step-card:hover {
+      box-shadow: 0 4px 24px rgba(0,0,0,0.09);
+    }
+    .step-card::after {
+      content: attr(data-arrow);
+      position: absolute; right: -24px; top: 50%;
+      transform: translateY(-50%);
+      font-size: 18px; color: rgba(200,160,0,0.35);
+      display: none;
+    }
+    @media (min-width: 680px) { .step-card:not(:last-child)::after { display: block; } }
+
+    .step-n {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 64px; line-height: 1; color: var(--gold);
+      letter-spacing: 2px; margin-bottom: 12px;
+      opacity: 0.55;
+    }
+    .step-title { font-weight: 900; font-size: 18px; color: var(--white); margin-bottom: 10px; }
+    .step-desc { font-size: 13px; color: var(--muted); line-height: 1.65; font-weight: 600; }
+
+    /* ══════════════════════════════════════
+       QUOTE BAND
+    ══════════════════════════════════════ */
+    .quote-band {
+      padding: 72px 24px; text-align: center;
+      position: relative; isolation: isolate;
+    }
+    .quote-band::before {
+      content: ''; position: absolute; inset: 0; z-index: -1;
+      background: linear-gradient(180deg, transparent 0%, rgba(14,40,18,0.45) 50%, transparent 100%);
+    }
+    [data-theme="light"] .quote-band::before {
+      background: linear-gradient(180deg, transparent 0%, rgba(200,230,200,0.4) 50%, transparent 100%);
+    }
+    .quote-qmark {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 96px; line-height: 0.65;
+      color: rgba(200,160,0,0.1); display: block; margin-bottom: 12px;
+    }
+    .quote-q {
+      font-size: clamp(19px, 3.5vw, 26px); font-weight: 800;
+      line-height: 1.5; max-width: 620px; margin: 0 auto 16px; color: var(--white);
+    }
+    .quote-q em { font-style: normal; color: var(--gold); }
+    .quote-by { font-size: 13px; color: var(--muted2); font-weight: 700; }
+
+    /* ══════════════════════════════════════
+       INSTALL SECTION
+    ══════════════════════════════════════ */
+    .install-wrap { padding: 0 24px 88px; }
+    .install-card {
+      max-width: 640px; margin: 0 auto;
+      background: linear-gradient(135deg, rgba(200,160,0,0.06), rgba(200,160,0,0.025));
+      border: 1px solid rgba(200,160,0,0.18);
+      border-radius: 28px; padding: 52px 40px;
+      text-align: center; position: relative; overflow: hidden;
+    }
+    .install-card::before {
+      content: ''; position: absolute; inset-x: 0; top: 0; height: 2px;
+      background: linear-gradient(90deg, transparent 0%, var(--gold) 40%, var(--gold) 60%, transparent 100%);
+    }
+    .install-emoji { font-size: 52px; display: block; margin-bottom: 18px; }
+    .install-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 42px; letter-spacing: 1.5px; margin-bottom: 12px;
+      color: var(--white);
+    }
+    .install-sub {
+      font-size: 14px; color: var(--muted); font-weight: 600;
+      line-height: 1.65; margin-bottom: 28px; max-width: 440px; margin-left: auto; margin-right: auto;
+    }
+
+    /* OS tabs */
+    .os-tabs {
+      display: flex; gap: 6px; justify-content: center; margin-bottom: 22px;
+    }
+    .os-tab {
+      padding: 7px 18px; border-radius: 99px; cursor: pointer;
+      font-size: 12px; font-weight: 800; letter-spacing: 0.5px;
+      border: 1px solid var(--border); color: var(--muted);
+      background: transparent; transition: all 0.2s;
+    }
+    .os-tab.active {
+      background: var(--gold-gl); border-color: rgba(200,160,0,0.3);
+      color: var(--gold);
+    }
+
+    .install-steps { text-align: left; margin-bottom: 28px; display: flex; flex-direction: column; gap: 10px; }
+    .install-steps-panel { display: none; }
+    .install-steps-panel.active { display: flex; flex-direction: column; gap: 10px; }
+    .install-step {
+      display: flex; align-items: center; gap: 14px;
+      font-size: 13px; font-weight: 700; color: var(--muted);
+    }
+    .install-n {
+      width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+      background: rgba(200,160,0,0.10); border: 1px solid rgba(200,160,0,0.2);
+      color: var(--gold); font-size: 12px; font-weight: 900;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ══════════════════════════════════════
+       FINAL CTA
+    ══════════════════════════════════════ */
+    .final {
+      padding: 88px 24px 110px;
+      text-align: center; position: relative; isolation: isolate; overflow: hidden;
+    }
+    .final::before {
+      content: ''; position: absolute; inset: 0; z-index: -1;
+      background: radial-gradient(ellipse 75% 65% at 50% 55%, rgba(18,60,26,0.55) 0%, transparent 70%);
+    }
+    [data-theme="light"] .final::before {
+      background: radial-gradient(ellipse 75% 65% at 50% 55%, rgba(180,220,180,0.35) 0%, transparent 70%);
+    }
+    .final-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(44px, 10vw, 84px); line-height: 0.92;
+      letter-spacing: 2px; margin-bottom: 18px; color: var(--white);
+    }
+    .final-title em { font-style: normal; color: var(--gold); }
+    .final-sub {
+      font-size: 16px; color: var(--muted); font-weight: 600;
+      margin-bottom: 38px; max-width: 360px;
+      margin-left: auto; margin-right: auto; line-height: 1.6;
+    }
+    .final-actions {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 12px; max-width: 280px; margin: 0 auto;
+    }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
+    .pill {
+      padding: 5px 13px; border-radius: 99px;
+      font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
+    }
+    .pill-g  { background: rgba(30,130,50,0.10);  color: var(--runs);   border: 1px solid rgba(30,130,50,0.2); }
+    .pill-y  { background: rgba(200,160,0,0.10);  color: var(--gold);   border: 1px solid rgba(200,160,0,0.2); }
+    .pill-b  { background: rgba(30,140,180,0.10); color: var(--four);   border: 1px solid rgba(30,140,180,0.2); }
+
+    /* ══════════════════════════════════════
+       DIVIDER
+    ══════════════════════════════════════ */
+    .div {
+      height: 1px; max-width: 960px; margin: 0 auto;
+      background: linear-gradient(90deg, transparent, var(--border2), transparent);
+    }
+
+    /* ══════════════════════════════════════
+       FOOTER
+    ══════════════════════════════════════ */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 36px 24px;
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      transition: border-color 0.35s;
+    }
+    .footer-brand {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 22px; letter-spacing: 2px; color: var(--gold);
+    }
+    .footer-links { display: flex; gap: 28px; }
+    .footer-link {
+      font-size: 13px; font-weight: 700; color: var(--muted);
+      text-decoration: none; transition: color 0.2s;
+    }
+    .footer-link:hover { color: var(--white); }
+    .footer-copy { font-size: 11px; color: var(--muted2); font-weight: 600; }
+
+    /* ══════════════════════════════════════
+       RESPONSIVE
+    ══════════════════════════════════════ */
+    @media (max-width: 480px) {
+      .hero { padding-top: 90px; }
+      .install-card { padding: 36px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <a href="#" class="nav-brand">
+    <img src="/icons/icon-192.png" alt="CricScore" />
+    <span class="nav-brand-name">CricScore</span>
+  </a>
+  <div class="nav-right">
+    <a href="#features" class="nav-link">Features</a>
+    <a href="#how" class="nav-link">How it works</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Toggle light/dark">☀️</button>
+    <a href="/" class="nav-cta">🏏 Open App</a>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="hero-mesh"></div>
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+
+  <div class="hero-inner">
+
+    <!-- Text side -->
+    <div class="hero-text">
+      <div class="hero-icon-wrap reveal">
+        <img src="/icons/icon-192.png" alt="CricScore" class="hero-icon" />
+        <div class="hero-icon-ring"></div>
+      </div>
+
+      <div class="hero-badge reveal d1">
+        <span class="hero-badge-dot"></span>
+        Free · Offline · No Sign-Up
+      </div>
+
+      <h1 class="hero-title reveal d2">
+        Score Street Cricket<br />
+        <span class="hero-title-line2">Like a Pro</span>
+      </h1>
+
+      <p class="hero-sub reveal d3">
+        Ball-by-ball scoring for every gully match. Wickets, boundaries, stats — even with zero Wi-Fi.
+      </p>
+
+      <div class="hero-actions reveal d4">
+        <a href="/" class="btn-gold">🏏 &nbsp;Start Scoring — Free</a>
+        <a href="#features" class="btn-ghost">Explore features ↓</a>
+      </div>
+      <p class="hero-note reveal d4">Works on any phone · Installs like a native app</p>
+    </div>
+
+    <!-- Phone side (desktop only) -->
+    <div class="hero-phone-wrap reveal d3">
+      <div class="hero-phone-glow"></div>
+      <div class="phone phone-float">
+        <div class="phone-pill"></div>
+        <div class="phone-screen">
+          <div class="sim-bar">
+            <div class="sim-bar-left">
+              <div class="sim-live"></div>
+              <div>
+                <div class="sim-title">Lions vs Tigers</div>
+                <div class="sim-sub">2nd Innings · Over 4</div>
+              </div>
+            </div>
+            <div class="sim-bar-right">
+              <div class="sim-icon-btn">📋</div>
+              <div class="sim-icon-btn" style="background:rgba(255,255,255,0.1);color:#fff;font-size:9px;font-weight:800;">⋮</div>
+            </div>
+          </div>
+          <div class="sim-scoreboard">
+            <div class="sim-score">87/3</div>
+            <div class="sim-target">Target 112 · Need 25 off 18 balls</div>
+            <div class="sim-stats">
+              <div>
+                <div class="sim-stat-val">3.5</div>
+                <div class="sim-stat-lbl">Overs</div>
+              </div>
+              <div>
+                <div class="sim-stat-val" style="color:#f5c842">8.7</div>
+                <div class="sim-stat-lbl">Run Rate</div>
+              </div>
+              <div>
+                <div class="sim-stat-val" style="color:#f0556a">13.6</div>
+                <div class="sim-stat-lbl">Req. RR</div>
+              </div>
+            </div>
+          </div>
+          <div class="sim-over">
+            <div class="sim-ball b-dot">·</div>
+            <div class="sim-ball b-run">1</div>
+            <div class="sim-ball b-four">4</div>
+            <div class="sim-ball b-run">2</div>
+            <div class="sim-ball b-six">6</div>
+            <div class="sim-ball b-wd">Wd</div>
+          </div>
+          <div class="sim-batters">
+            <div class="sim-batter on">
+              <div class="sim-bname">Rohit <span class="sim-dot-striker"></span></div>
+              <div class="sim-bscore">34</div>
+              <div class="sim-bballs">22b · SR 154</div>
+            </div>
+            <div class="sim-batter">
+              <div class="sim-bname">Arjun</div>
+              <div class="sim-bscore">18</div>
+              <div class="sim-bballs">14b · SR 128</div>
+            </div>
+          </div>
+          <div class="sim-buttons">
+            <div class="sim-btn sb-0">0</div>
+            <div class="sim-btn sb-1">1</div>
+            <div class="sim-btn sb-2">2</div>
+            <div class="sim-btn sb-3">3</div>
+            <div class="sim-btn sb-4">4</div>
+            <div class="sim-btn sb-6">6</div>
+            <div class="sim-btn sb-w">WICKET</div>
+            <div class="sim-btn sb-wd">Wd/NB</div>
+          </div>
+          <div class="sim-nav">
+            <div class="sim-nav-tab on"><div class="ni">🏠</div><div>Home</div></div>
+            <div class="sim-nav-tab"><div class="ni">📋</div><div>History</div></div>
+            <div class="sim-nav-tab"><div class="ni">👥</div><div>Teams</div></div>
+            <div class="sim-nav-tab"><div class="ni">🎲</div><div>Gen</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── TRUST TICKER ── -->
+<div class="trust-bar">
+  <div class="trust-track">
+    <div class="trust-item"><span>📶</span> 100% Offline</div>
+    <div class="trust-item"><span>🆓</span> Free Forever</div>
+    <div class="trust-item"><span>🔒</span> No Account Needed</div>
+    <div class="trust-item"><span>📱</span> Installs Like an App</div>
+    <div class="trust-item"><span>🏏</span> Built for Street Cricket</div>
+    <div class="trust-item"><span>↩️</span> Instant Undo</div>
+    <div class="trust-item"><span>🎲</span> Fair Team Generator</div>
+    <div class="trust-item"><span>📤</span> Share as PNG Scorecard</div>
+    <div class="trust-item"><span>🎯</span> Street Rules Built-In</div>
+    <!-- repeat for seamless loop -->
+    <div class="trust-item"><span>📶</span> 100% Offline</div>
+    <div class="trust-item"><span>🆓</span> Free Forever</div>
+    <div class="trust-item"><span>🔒</span> No Account Needed</div>
+    <div class="trust-item"><span>📱</span> Installs Like an App</div>
+    <div class="trust-item"><span>🏏</span> Built for Street Cricket</div>
+    <div class="trust-item"><span>↩️</span> Instant Undo</div>
+    <div class="trust-item"><span>🎲</span> Fair Team Generator</div>
+    <div class="trust-item"><span>📤</span> Share as PNG Scorecard</div>
+    <div class="trust-item"><span>🎯</span> Street Rules Built-In</div>
+  </div>
+</div>
+
+<!-- ── PHONE MOCKUP (mobile only) ── -->
+<div class="mockup-section">
+  <div class="mockup-label reveal">
+    <h2>The <em>Full Scorecard</em><br/>In Your Pocket</h2>
+    <p style="margin: 8px auto 0;">One thumb. One tap per ball. The whole match captured.</p>
+  </div>
+  <div class="phone phone-float reveal d2">
+    <div class="phone-pill"></div>
+    <div class="phone-screen">
+      <div class="sim-bar">
+        <div class="sim-bar-left">
+          <div class="sim-live"></div>
+          <div>
+            <div class="sim-title">Lions vs Tigers</div>
+            <div class="sim-sub">2nd Innings · Over 4</div>
+          </div>
+        </div>
+        <div class="sim-bar-right">
+          <div class="sim-icon-btn">📋</div>
+          <div class="sim-icon-btn" style="background:rgba(255,255,255,0.1);color:#fff;font-size:9px;font-weight:800;">⋮</div>
+        </div>
+      </div>
+      <div class="sim-scoreboard">
+        <div class="sim-score">87/3</div>
+        <div class="sim-target">Target 112 · Need 25 off 18 balls</div>
+        <div class="sim-stats">
+          <div><div class="sim-stat-val">3.5</div><div class="sim-stat-lbl">Overs</div></div>
+          <div><div class="sim-stat-val" style="color:#f5c842">8.7</div><div class="sim-stat-lbl">Run Rate</div></div>
+          <div><div class="sim-stat-val" style="color:#f0556a">13.6</div><div class="sim-stat-lbl">Req. RR</div></div>
+        </div>
+      </div>
+      <div class="sim-over">
+        <div class="sim-ball b-dot">·</div>
+        <div class="sim-ball b-run">1</div>
+        <div class="sim-ball b-four">4</div>
+        <div class="sim-ball b-run">2</div>
+        <div class="sim-ball b-six">6</div>
+        <div class="sim-ball b-wd">Wd</div>
+      </div>
+      <div class="sim-batters">
+        <div class="sim-batter on">
+          <div class="sim-bname">Rohit <span class="sim-dot-striker"></span></div>
+          <div class="sim-bscore">34</div>
+          <div class="sim-bballs">22b · SR 154</div>
+        </div>
+        <div class="sim-batter">
+          <div class="sim-bname">Arjun</div>
+          <div class="sim-bscore">18</div>
+          <div class="sim-bballs">14b · SR 128</div>
+        </div>
+      </div>
+      <div class="sim-buttons">
+        <div class="sim-btn sb-0">0</div>
+        <div class="sim-btn sb-1">1</div>
+        <div class="sim-btn sb-2">2</div>
+        <div class="sim-btn sb-3">3</div>
+        <div class="sim-btn sb-4">4</div>
+        <div class="sim-btn sb-6">6</div>
+        <div class="sim-btn sb-w">WICKET</div>
+        <div class="sim-btn sb-wd">Wd/NB</div>
+      </div>
+      <div class="sim-nav">
+        <div class="sim-nav-tab on"><div class="ni">🏠</div><div>Home</div></div>
+        <div class="sim-nav-tab"><div class="ni">📋</div><div>History</div></div>
+        <div class="sim-nav-tab"><div class="ni">👥</div><div>Teams</div></div>
+        <div class="sim-nav-tab"><div class="ni">🎲</div><div>Gen</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="div"></div>
+
+<!-- ── FEATURES ── -->
+<div class="section-wrap" id="features">
+  <div class="section-eye reveal">Everything You Need</div>
+  <h2 class="section-title reveal d1">Built for <em>Real Cricket</em></h2>
+  <p class="section-sub reveal d2">Every feature designed for how street cricket is actually played — flexible teams, no umpires, street rules your way.</p>
+
+  <div class="features-grid">
+
+    <div class="feat feat-xl reveal">
+      <span class="feat-icon">🏏</span>
+      <div>
+        <div class="feat-title">Ball-by-Ball Scoring</div>
+        <div class="feat-desc">Every delivery recorded in real time — runs, wides, no-balls, byes, leg-byes, wickets. The full scorecard, batting card, and bowling card build themselves automatically. One thumb, one tap.</div>
+        <span class="feat-tag tag-gold">Core Feature</span>
+      </div>
+    </div>
+
+    <div class="feat reveal" data-glow="green">
+      <span class="feat-icon">📶</span>
+      <div class="feat-title">100% Offline</div>
+      <div class="feat-desc">No Wi-Fi? No problem. All data lives on your device. Score from any ground, rooftop, or gully — any time.</div>
+      <span class="feat-tag tag-green">Works Anywhere</span>
+    </div>
+
+    <div class="feat reveal d1">
+      <span class="feat-icon">🎲</span>
+      <div class="feat-title">Fair Team Generator</div>
+      <div class="feat-desc">Shuffle your squad into balanced teams instantly. Supports 2 or 3 teams, walk-in guests, and saves the split as a shareable PNG card.</div>
+    </div>
+
+    <div class="feat reveal d2" data-glow="blue">
+      <span class="feat-icon">📊</span>
+      <div class="feat-title">Full Scorecard</div>
+      <div class="feat-desc">Batting card, bowling card, fall of wickets, over-by-over breakdown — everything auto-built the moment the last ball is bowled. Export as a sharp PNG or share as text.</div>
+      <span class="feat-tag tag-blue">Auto-Generated</span>
+    </div>
+
+    <div class="feat reveal" data-glow="blue">
+      <span class="feat-icon">📋</span>
+      <div class="feat-title">Match History</div>
+      <div class="feat-desc">Every match saved. Browse all past games grouped by date, filter by live or completed, and pull up any full scorecard in seconds.</div>
+    </div>
+
+    <div class="feat reveal d1">
+      <span class="feat-icon">🎯</span>
+      <div class="feat-title">Street Cricket Rules</div>
+      <div class="feat-desc">One-tip-one-hand, last man stands, no LBW, free hit on no-ball, max overs per bowler — toggle every street rule on or off per match.</div>
+    </div>
+
+    <div class="feat reveal d2">
+      <span class="feat-icon">📤</span>
+      <div class="feat-title">Share Scorecards</div>
+      <div class="feat-desc">Export a premium PNG scorecard image with the full batting and bowling stats. Share to the group chat the moment the last ball is bowled.</div>
+    </div>
+
+    <div class="feat reveal" data-glow="red">
+      <span class="feat-icon">↩️</span>
+      <div class="feat-title">Instant Undo</div>
+      <div class="feat-desc">Wrong button? One tap undoes the last delivery — no pop-ups, no confirmations, no lost balls.</div>
+      <span class="feat-tag tag-red">No Mistakes Stick</span>
+    </div>
+
+    <div class="feat reveal d1">
+      <span class="feat-icon">👥</span>
+      <div class="feat-title">Saved Squads</div>
+      <div class="feat-desc">Save your regular crew once. Pick players in seconds every time you start a new match — no typing names again.</div>
+    </div>
+
+  </div>
+</div>
+
+<div class="div"></div>
+
+<!-- ── STATS ── -->
+<div class="stats-section">
+  <div class="stats-inner reveal">
+    <div>
+      <div class="stat-n" data-target="∞" data-suffix="">∞</div>
+      <div class="stat-l">Matches tracked</div>
+    </div>
+    <div>
+      <div class="stat-n" data-target="0" data-prefix="₹">₹0</div>
+      <div class="stat-l">Cost, forever</div>
+    </div>
+    <div>
+      <div class="stat-n" data-target="0" data-suffix="s">0s</div>
+      <div class="stat-l">Sign-up time</div>
+    </div>
+    <div>
+      <div class="stat-n" data-target="100" data-suffix="%">100%</div>
+      <div class="stat-l">Offline ready</div>
+    </div>
+  </div>
+</div>
+
+<div class="div"></div>
+
+<!-- ── HOW IT WORKS ── -->
+<div class="section-wrap" id="how">
+  <div class="section-eye reveal">Simple as Cricket Itself</div>
+  <h2 class="section-title reveal d1">Three Steps to Your <em>First Match</em></h2>
+  <p class="section-sub reveal d2">No tutorial needed. Pick it up mid-match and you'll have it down in two overs.</p>
+
+  <div class="steps-grid">
+    <div class="step-card reveal" data-arrow="→">
+      <div class="step-n">01</div>
+      <div class="step-title">Set up the match</div>
+      <div class="step-desc">Team names, overs, players per side. Toggle any street rules. Flip a coin for the toss. Done in 60 seconds.</div>
+    </div>
+    <div class="step-card reveal d1" data-arrow="→">
+      <div class="step-n">02</div>
+      <div class="step-title">Tap to score</div>
+      <div class="step-desc">Big thumb-friendly buttons for every outcome — 0, 1, 2, 3, 4, 6, Wicket, Wide, No-Ball. One tap each.</div>
+    </div>
+    <div class="step-card reveal d2">
+      <div class="step-n">03</div>
+      <div class="step-title">Share the result</div>
+      <div class="step-desc">Full scorecard ready the moment the last ball is bowled. Tap Share and a premium PNG lands in the group chat instantly.</div>
+    </div>
+  </div>
+</div>
+
+<div class="div"></div>
+
+<!-- ── QUOTE ── -->
+<div class="quote-band">
+  <span class="quote-qmark reveal">"</span>
+  <p class="quote-q reveal d1">
+    Street cricket deserves a scorer as good as <em>Test cricket</em> gets.<br />Now it has one.
+  </p>
+  <p class="quote-by reveal d2">— Built for every gully, mohalla &amp; rooftop ground</p>
+</div>
+
+<div class="div"></div>
+
+<!-- ── INSTALL ── -->
+<div class="install-wrap">
+  <div class="install-card reveal">
+    <span class="install-emoji">📲</span>
+    <h2 class="install-title">Add to Your Home Screen</h2>
+    <p class="install-sub">CricScore is a Progressive Web App. Installs like a native app, launches full-screen, works completely offline — no App Store needed.</p>
+
+    <div class="os-tabs" id="osTabs">
+      <button class="os-tab active" data-os="android" onclick="switchOS('android')">🤖 Android</button>
+      <button class="os-tab" data-os="ios" onclick="switchOS('ios')">🍎 iPhone / iPad</button>
+      <button class="os-tab" data-os="desktop" onclick="switchOS('desktop')">💻 Desktop</button>
+    </div>
+
+    <div class="install-steps">
+      <div class="install-steps-panel active" id="steps-android">
+        <div class="install-step">
+          <div class="install-n">1</div>
+          Open in Chrome on your Android device
+        </div>
+        <div class="install-step">
+          <div class="install-n">2</div>
+          Tap the three-dot menu → "Add to Home screen" or "Install app"
+        </div>
+        <div class="install-step">
+          <div class="install-n">3</div>
+          Launch full-screen from your home screen — no browser bar
+        </div>
+      </div>
+      <div class="install-steps-panel" id="steps-ios">
+        <div class="install-step">
+          <div class="install-n">1</div>
+          Open in Safari on your iPhone or iPad
+        </div>
+        <div class="install-step">
+          <div class="install-n">2</div>
+          Tap the Share icon (square with arrow) → "Add to Home Screen"
+        </div>
+        <div class="install-step">
+          <div class="install-n">3</div>
+          Tap "Add" — it launches full-screen, just like a native app
+        </div>
+      </div>
+      <div class="install-steps-panel" id="steps-desktop">
+        <div class="install-step">
+          <div class="install-n">1</div>
+          Open in Chrome, Edge, or Brave on your computer
+        </div>
+        <div class="install-step">
+          <div class="install-n">2</div>
+          Click the install icon in the address bar (or browser menu → "Install")
+        </div>
+        <div class="install-step">
+          <div class="install-n">3</div>
+          Opens as a standalone app — score matches from your desktop too
+        </div>
+      </div>
+    </div>
+
+    <a href="/" class="btn-gold" style="max-width:260px; margin: 0 auto; display:flex;">
+      🏏 &nbsp;Open CricScore
+    </a>
+  </div>
+</div>
+
+<!-- ── FINAL CTA ── -->
+<div class="final">
+  <h2 class="final-title reveal">
+    Ready for the<br /><em>Next Match?</em>
+  </h2>
+  <p class="final-sub reveal d1">No downloads. No accounts. Just open and start scoring.</p>
+  <div class="final-actions reveal d2">
+    <a href="/" class="btn-gold">🏏 &nbsp;Start Scoring — It's Free</a>
+    <div class="pill-row">
+      <span class="pill pill-g">✓ Works offline</span>
+      <span class="pill pill-y">✓ Free forever</span>
+      <span class="pill pill-b">✓ No account</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-brand">CricScore</div>
+  <div class="footer-links">
+    <a href="/" class="footer-link">Open App</a>
+    <a href="#features" class="footer-link">Features</a>
+    <a href="#how" class="footer-link">How it works</a>
+  </div>
+  <div class="footer-copy">Street Cricket Scorer · Free · Offline-First · Made with ❤️ for gully cricket</div>
+</footer>
+
+<script>
+  // ── Scroll reveal ──
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (e.isIntersecting) { e.target.classList.add('visible'); io.unobserve(e.target); }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+
+  // Hero elements fire immediately (above fold)
+  document.querySelectorAll('.hero .reveal').forEach((el) => el.classList.add('visible'));
+
+  // ── Shrink nav on scroll ──
+  const nav = document.querySelector('nav');
+  window.addEventListener('scroll', () => {
+    nav.style.padding = window.scrollY > 60 ? '10px 28px' : '14px 28px';
+  }, { passive: true });
+
+  // ── Theme toggle ──
+  const html = document.documentElement;
+  const toggleBtn = document.getElementById('themeToggle');
+  const THEME_KEY = 'cricscore-theme';
+
+  function applyTheme(t) {
+    html.setAttribute('data-theme', t);
+    toggleBtn.textContent = t === 'dark' ? '☀️' : '🌙';
+    try { localStorage.setItem(THEME_KEY, t); } catch {}
+  }
+
+  // Load saved theme (or respect system preference)
+  (function initTheme() {
+    let saved;
+    try { saved = localStorage.getItem(THEME_KEY); } catch {}
+    if (saved === 'light' || saved === 'dark') {
+      applyTheme(saved);
+    } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+      applyTheme('light');
+    } else {
+      applyTheme('dark');
+    }
+  })();
+
+  toggleBtn.addEventListener('click', () => {
+    applyTheme(html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
+
+  // ── Stats count-up on scroll ──
+  const statsObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const statsInner = entry.target;
+      statsObserver.unobserve(statsInner);
+
+      statsInner.querySelectorAll('.stat-n[data-target]').forEach((el) => {
+        const target = el.getAttribute('data-target');
+        const prefix = el.getAttribute('data-prefix') || '';
+        const suffix = el.getAttribute('data-suffix') || '';
+
+        if (target === '∞' || target === '0') {
+          // No animation for these — they're already at their final value
+          return;
+        }
+
+        const end = parseFloat(target);
+        const duration = 1800;
+        const start = performance.now();
+
+        function step(now) {
+          const elapsed = now - start;
+          const progress = Math.min(elapsed / duration, 1);
+          // ease-out cubic
+          const eased = 1 - Math.pow(1 - progress, 3);
+          const current = Math.round(eased * end);
+          el.textContent = prefix + current + suffix;
+          if (progress < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      });
+    });
+  }, { threshold: 0.5 });
+
+  const statsInner = document.querySelector('.stats-inner');
+  if (statsInner) statsObserver.observe(statsInner);
+
+  // ── OS detection for install section ──
+  function detectOS() {
+    const ua = navigator.userAgent;
+    if (/iPhone|iPad|iPod/.test(ua)) return 'ios';
+    if (/Android/.test(ua)) return 'android';
+    return 'desktop';
+  }
+
+  function switchOS(os) {
+    document.querySelectorAll('.os-tab').forEach((t) => {
+      t.classList.toggle('active', t.getAttribute('data-os') === os);
+    });
+    document.querySelectorAll('.install-steps-panel').forEach((p) => {
+      p.classList.toggle('active', p.id === 'steps-' + os);
+    });
+  }
+
+  // Auto-select the user's platform
+  switchOS(detectOS());
+</script>
+</body>
+</html>

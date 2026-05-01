@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/landing", "destination": "/landing.html" },
+    { "source": "/((?!landing|icons|manifest\\.json|sw\\.js|workbox.*|assets).*)", "destination": "/index.html" }
+  ]
+}

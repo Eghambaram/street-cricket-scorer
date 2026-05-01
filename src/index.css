@@ -1,0 +1,281 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DARK THEME — "Pitch Night"
+   Spec: cricket-color-system.html  ·  Audit: cricket-colour-audit.html
+   ───────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Layer stack — 3-level elevation (audit: 1.6× luminance ratio rule) */
+  --color-bg:          12 15 10;        /* #0C0F0A  page base               */
+  --color-surface:     20 24 16;        /* #141810  cards / panels          */
+  --color-surface-dp:  28 33 24;        /* #1C2118  topbar / nav / modals   */
+
+  /* Text hierarchy */
+  --color-fg:          232 240 226;     /* #E8F0E2  primary  — 14.2:1 ✓    */
+  --color-muted:       143 168 131;     /* #8FA883  secondary — 5.1:1 ✓    */
+  --color-muted-dk:    77 94 71;        /* #4D5E47  dim / placeholders      */
+
+  /* ── UI Chrome ── (navigation, CTAs, non-cricket accents)                 */
+  --color-gold:        255 184 0;       /* #FFB800  primary accent           */
+  --color-gold-lt:     255 213 77;      /* #FFD54D  hover / lighter          */
+  --color-gold-dk:     196 138 0;       /* #C48A00  pressed / darker         */
+
+  /* ── Cricket Semantic: RUNS (positive scoring) ──                         */
+  --color-runs:        111 207 74;      /* #6FCF4A  lime green  8.3:1 ✓     */
+  --color-runs-lt:     160 230 118;     /* lighter                           */
+  --color-runs-dk:     55 120 24;       /* #377818  darker                   */
+
+  /* ── Cricket Semantic: AMBER (W chip, RRR pressure, no-ball) ──           */
+  --color-amber:       245 166 35;      /* #F5A623  W chip / alert           */
+  --color-amber-lt:    251 194 90;      /* lighter                           */
+  --color-amber-dk:    196 120 0;       /* #C47800                           */
+
+  /* ── Cricket Semantic: FOUR boundary ──                                   */
+  --color-four:        59 201 219;      /* #3BC9DB  cyan                     */
+  --color-four-lt:     103 220 232;     /* lighter                           */
+
+  /* ── SIX (ball chip — coral red per spec) ──                              */
+  --color-six:         232 76 106;      /* #E84C6A  coral red                */
+  --color-six-lt:      252 165 165;
+
+  /* ── Danger (WICKET button, flash animation, validation errors) ──        */
+  --color-wicket:      232 76 106;      /* #E84C6A  coral red                */
+  --color-wicket-lt:   252 165 165;
+  --color-wicket-dk:   153 27 51;       /* #991B33                           */
+
+  /* ── Extras (bowling error family) ──                                     */
+  --color-wide:        167 139 250;     /* #A78BFA  wide  (violet)           */
+  --color-noball:      251 147 60;      /* #FB923C  no ball (orange)         */
+
+  /* ── Utility: safe (teal — "Target reached", squad team chips) ──         */
+  --color-safe:        42 157 143;      /* #2A9D8F                           */
+  --color-safe-lt:     75 186 172;
+
+  /* ── CTA Grass green ──                                                   */
+  --color-grass:       16 100 48;       /* #106430                           */
+  --color-grass-lt:    26 130 62;       /* #1A823E                           */
+
+  /* ── Ball button tinted surfaces ──                                       */
+  --color-btn-four:    15 45 53;        /* #0F2D35  deep teal panel          */
+  --color-btn-six:     50 16 26;        /* #32101A  deep coral panel         */
+
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* ── Chip palette — role badges + player avatars ──
+     600-level in dark: visible against dark panels, white text works (4.5:1+)  */
+  --chip-bat:  37  99  235;   /* blue-600   */
+  --chip-bow:  234  88  12;   /* orange-600 */
+  --chip-ar:   147  51 234;   /* purple-600 */
+  --chip-wk:    13 148 136;   /* teal-600   */
+  --chip-ex1:  219  39 119;   /* pink-600   */
+  --chip-ex2:   79  70 229;   /* indigo-600 */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LIGHT THEME — "Day Play"
+   Audit fixes applied: green → #276012 (6.8:1), deeper accents for outdoor
+   ───────────────────────────────────────────────────────────────────────────── */
+html.light-theme {
+  --color-bg:          244 247 240;     /* #F4F7F0  sage white               */
+  --color-surface:     255 255 255;     /* #FFFFFF  cards                    */
+  --color-surface-dp:  238 243 232;     /* #EEF3E8  headers / tabs           */
+  --color-fg:          26 33 22;        /* #1A2116  near-black  14:1 ✓       */
+  --color-muted:       74 96 64;        /* #4A6040  secondary                */
+  --color-muted-dk:    143 168 131;     /* #8FA883  dim                      */
+
+  /* UI Chrome */
+  --color-gold:        196 120 0;       /* #C47800  amber-gold               */
+  --color-gold-lt:     218 148 18;
+  --color-gold-dk:     158 96 0;
+
+  /* Runs — AUDIT FIX: #276012 = 6.8:1 (replaces risky #3A8C1A = 4.6:1)    */
+  --color-runs:        39 96 18;        /* #276012  forest green  6.8:1 ✓   */
+  --color-runs-lt:     55 128 25;
+  --color-runs-dk:     26 72 12;
+
+  /* Amber */
+  --color-amber:       176 100 0;       /* #B06400  deepened for outdoor     */
+  --color-amber-lt:    196 120 0;
+  --color-amber-dk:    140 76 0;
+
+  /* FOUR */
+  --color-four:        14 140 168;      /* #0E8CA8  deep teal                */
+  --color-four-lt:     20 165 196;
+
+  /* SIX */
+  --color-six:         196 24 58;       /* #C4183A  crimson                  */
+  --color-six-lt:      240 100 120;
+
+  /* Wicket / Danger */
+  --color-wicket:      196 24 58;       /* #C4183A  crimson                  */
+  --color-wicket-lt:   240 100 120;
+  --color-wicket-dk:   140 15 40;
+
+  /* Extras */
+  --color-wide:        109  40 217;     /* #6D28D9  deep violet              */
+  --color-noball:      194  65  12;     /* #C2410C  deep orange              */
+
+  /* Safe */
+  --color-safe:        15 118 110;      /* #0F766E                           */
+  --color-safe-lt:     30 148 136;
+
+  /* Grass */
+  --color-grass:       10 80 35;
+  --color-grass-lt:    20 110 50;
+
+  /* Ball button surfaces */
+  --color-btn-four:    184 235 243;     /* #B8EBF3  light cyan tint          */
+  --color-btn-six:     255 220 228;     /* #FFDCE4  light coral tint         */
+
+  /* Chip palette — 700-level in light: enough contrast on white cards (4.5:1+) */
+  --chip-bat:  29  78 216;   /* blue-700   */
+  --chip-bow:  194  65  12;  /* orange-700 */
+  --chip-ar:   109  40 217;  /* purple-700 */
+  --chip-wk:   15 118 110;   /* teal-700   */
+  --chip-ex1:  190  24 93;   /* pink-700   */
+  --chip-ex2:   67  56 202;  /* indigo-700 */
+
+  /* ── Light-theme -lt overrides ──────────────────────────────────────────────
+     Dark mode -lt values are vivid/neon (e.g. four-lt = vivid cyan 103 220 232).
+     On white cards these blow out — override with calmer, deeper tones.         */
+  --color-four-lt:   20 175 206;   /* deep sky teal                             */
+  --color-safe-lt:   30 148 136;   /* muted teal                                */
+  --color-amber-lt:  196 120 0;    /* same as gold-dk (calmer)                  */
+  --color-runs-lt:   70 140 35;    /* forest green-lt                           */
+  --color-six-lt:    200  50  80;  /* crimson-lt (not vivid pink)               */
+  --color-wicket-lt: 200  50  80;  /* match six-lt                              */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   BASE STYLES
+   ───────────────────────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+
+  html {
+    font-family: Nunito, system-ui, sans-serif;
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-fg));
+    overscroll-behavior: none;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  body { margin: 0; min-height: 100dvh; overflow-x: hidden; }
+
+  .overflow-y-auto { -webkit-overflow-scrolling: touch; }
+
+  /* Premium dark radial glow — deep grass green from spec */
+  html:not(.light-theme) body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(
+      ellipse 130% 50% at 50% -5%,
+      rgb(var(--color-grass) / 0.55),
+      transparent 62%
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Light theme: sky-top glow + grass-bottom warmth — outdoor cricket feel */
+  html.light-theme body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 120% 35% at 50% -5%,  rgb(var(--color-four)  / 0.08), transparent 60%),
+      radial-gradient(ellipse 100% 30% at 50% 108%, rgb(var(--color-runs)  / 0.10), transparent 65%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Dark: 1px top highlight — distinguishes layers on OLED/budget Android */
+  html:not(.light-theme) .bg-pitch-light {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  }
+  html:not(.light-theme) .bg-pitch-dark {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+  }
+
+  /* Light: subtle drop shadow — separates cards from sage-white page bg */
+  html.light-theme .bg-pitch-light {
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.07), 0 1px 0 rgb(0 0 0 / 0.04);
+  }
+  html.light-theme .bg-pitch-dark {
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar           { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track     { background: transparent; }
+  ::-webkit-scrollbar-thumb     { background: rgb(var(--color-muted) / 0.3); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(var(--color-muted) / 0.6); }
+
+  /* Branded text selection */
+  ::selection { background-color: rgb(var(--color-gold) / 0.28); color: rgb(var(--color-fg)); }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   UTILITIES
+   ───────────────────────────────────────────────────────────────────────────── */
+@layer utilities {
+  .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem); }
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+
+  /* Shimmer — hero title */
+  .shimmer-gold {
+    background: linear-gradient(
+      110deg,
+      rgb(var(--color-gold-dk)) 0%,
+      rgb(var(--color-gold))    30%,
+      rgb(var(--color-gold-lt)) 50%,
+      rgb(var(--color-gold))    70%,
+      rgb(var(--color-gold-dk)) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 4s linear infinite;
+  }
+
+  /* Glass surface */
+  .glass {
+    background-color: rgb(var(--color-surface-dp) / 0.9);
+    backdrop-filter: blur(20px) saturate(1.6);
+    -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  }
+
+  /* Hide scrollbar, preserve scroll */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* Edge-lit card — top highlight + subtle shadow */
+  .edge-lit {
+    box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.08),
+                0 1px 4px 0 rgb(0 0 0 / 0.38),
+                0 2px 16px 0 rgb(0 0 0 / 0.24);
+  }
+
+  /* Gold glow — active/selected elements */
+  .glow-gold {
+    box-shadow: 0 0 20px 0 rgb(var(--color-gold) / 0.35),
+                0 0 6px 0 rgb(var(--color-gold) / 0.2);
+  }
+
+  /* Runs glow — live scoring positive feedback */
+  .glow-runs {
+    box-shadow: 0 0 16px 0 rgb(var(--color-runs) / 0.3);
+  }
+}
+
+/* ── Global keyframes used via inline style animation ────────────────────────
+   (These can't live in Tailwind config because they're referenced by name
+   in style={{ animation: '...' }} on dynamically-timed elements.)            */
+@keyframes toastProgress {
+  from { width: 100%; }
+  to   { width: 0%;   }
+}
