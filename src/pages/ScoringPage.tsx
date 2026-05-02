@@ -158,24 +158,9 @@ export default function ScoringPage() {
 
         // Last-man-stands: if no unused batter remains, allow the surviving
         // batter to continue alone by occupying both crease slots.
-        if (match.rules.lastManStands) {
-          const battingTeam = match.teams.find((t) => t.id === freshInnings.battingTeamId);
-          const usedPlayerIds = new Set([
-            ...freshInnings.battingOrder,
-            ...(freshInnings.retiredHurtIds ?? []),
-          ]);
-          const remainingBatsmen = battingTeam?.players.filter((p) => !usedPlayerIds.has(p.id)) ?? [];
-
-          if (remainingBatsmen.length === 0) {
-            const survivorId = (freshInnings.currentBatsmanIds.find((id) => !!id && id !== '') ?? '') as string;
-            if (survivorId) {
-              const updatedInnings = selectNextBatsman(freshInnings, survivorId);
-              await saveInnings(updatedInnings);
-              await loadInnings(match, updatedInnings);
-              await handlePostDelivery(result);
-              return;
-            }
-          }
+        if (match.rules.lastManStands && getRemainingBatsmenCount(match, freshInnings) === 0) {
+          await handlePostDelivery(result);
+          return;
         }
 
         // No batsman selected (or none available yet) — force manual selection.
