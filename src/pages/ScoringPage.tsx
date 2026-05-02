@@ -135,7 +135,7 @@ export default function ScoringPage() {
 
   const handleWicketConfirm = async (wicket: Wicket, nextBatsmanId: string | null) => {
     setShowWicket(false);
-    if (!innings) return;
+    if (!innings || !match) return;
 
     // Score the wicket FIRST — store clears the dismissed batsman's slot.
     const result = await score({ runs: 0, extras: { wide: 0, noBall: 0, bye: 0, legBye: 0 }, wicket });
@@ -148,10 +148,31 @@ export default function ScoringPage() {
         await saveInnings(updatedInnings);
         await loadInnings(match!, updatedInnings);
       } else {
-        // No batsman selected (or none available yet) — determine which slot
-        // is empty and open the ChangeBatsmanModal so the scorer MUST pick one
-        // before any more balls can be recorded.
         const freshInnings = useScoringStore.getState().innings!;
+
+        // Last-man-stands: if no unused batter remains, allow the surviving
+        // batter to continue alone by occupying both crease slots.
+        if (match.rules.lastManStands) {
+          const battingTeam = match.teams.find((t) => t.id === freshInnings.battingTeamId);
+          const usedPlayerIds = new Set([
+            ...freshInnings.battingOrder,
+            ...(freshInnings.retiredHurtIds ?? []),
+          ]);
+          const remainingBatsmen = battingTeam?.players.filter((p) => !usedPlayerIds.has(p.id)) ?? [];
+
+          if (remainingBatsmen.length === 0) {
+            const survivorId = (freshInnings.currentBatsmanIds.find((id) => !!id && id !== '') ?? '') as string;
+            if (survivorId) {
+              const updatedInnings = selectNextBatsman(freshInnings, survivorId);
+              await saveInnings(updatedInnings);
+              await loadInnings(match, updatedInnings);
+              await handlePostDelivery(result);
+              return;
+            }
+          }
+        }
+
+        // No batsman selected (or none available yet) — force manual selection.
         const emptySlot = freshInnings.currentBatsmanIds[0] === '' || freshInnings.currentBatsmanIds[0] == null
           ? 0
           : 1;
