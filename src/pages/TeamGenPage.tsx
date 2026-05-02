@@ -30,17 +30,32 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function skillScore(p: GenPlayer): number { return p.skillLevel === 'high' ? 3 : p.skillLevel === 'medium' ? 2 : 1; }
+function skillScore(p: GenPlayer): number { return p.skillLevel === 'high' ? 3 : p.skillLevel === 'low' ? 1 : 2; }
 
 function splitTeams(players: GenPlayer[], n: 2 | 3): GeneratedTeam[] {
   const teams: GeneratedTeam[] = Array.from({ length: n }, (_, i) => ({ name: `Team ${String.fromCharCode(65 + i)}`, players: [] }));
-  const sorted = shuffle(players).sort((a,b) => skillScore(b)-skillScore(a));
-  sorted.forEach((p, i) => {
-    const round = Math.floor(i / n);
-    const pos = i % n;
-    const idx = round % 2 === 0 ? pos : (n - 1 - pos);
-    teams[idx].players.push(p);
+  const totals = Array.from({ length: n }, () => 0);
+  const sizeTargets = Array.from({ length: n }, (_, i) => {
+    const base = Math.floor(players.length / n);
+    const extra = i < (players.length % n) ? 1 : 0;
+    return base + extra;
   });
+
+  const sorted = shuffle(players).sort((a, b) => skillScore(b) - skillScore(a));
+
+  sorted.forEach((p) => {
+    const nextIdx = teams
+      .map((_, idx) => idx)
+      .filter((idx) => teams[idx].players.length < sizeTargets[idx])
+      .sort((a, b) => {
+        if (totals[a] !== totals[b]) return totals[a] - totals[b];
+        return teams[a].players.length - teams[b].players.length;
+      })[0];
+
+    teams[nextIdx].players.push(p);
+    totals[nextIdx] += skillScore(p);
+  });
+
   return teams;
 }
 
@@ -153,7 +168,7 @@ export default function TeamGenPage() {
   const handleAddGuest = () => {
     const name = guestName.trim();
     if (!name) return;
-    const g: GenPlayer = { id: uuid(), name };
+    const g: GenPlayer = { id: uuid(), name, skillLevel: 'medium' };
     const next = [...guests, g];
     setGuests(next);
     persistGuests(next);
