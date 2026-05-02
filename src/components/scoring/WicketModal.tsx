@@ -160,7 +160,8 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
 
   // Steps for this dismissal type
   const needsFielder = !isSingle && !!(selectedInfo?.needsFielder);
-  const needsNextBatsman = !isLastMan && remainingBatsmen.length > 0;
+  const canContinueWithLoneBatsman = match.rules.lastManStands && !isLastMan && remainingBatsmen.length === 0;
+  const needsNextBatsman = !isLastMan && !canContinueWithLoneBatsman && remainingBatsmen.length > 0;
   const steps: Step[] = ['how_out'];
   if (selectedType && needsFielder) steps.push('fielder');
   if (selectedType) steps.push('next_batsman');
@@ -194,6 +195,7 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
   // Confirm button label
   const confirmLabel = (() => {
     if (isLastMan) return 'Dismiss — End Innings';
+    if (canContinueWithLoneBatsman) return 'Confirm Wicket — Continue with Last Batter';
     if (!needsNextBatsman) return 'Confirm Wicket';
     const typeLabel = selectedInfo?.label ?? '';
     const fielderPart = fielderName ? ` · ${fielderName}` : '';
