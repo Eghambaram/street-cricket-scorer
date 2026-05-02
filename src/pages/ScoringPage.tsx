@@ -59,8 +59,17 @@ export default function ScoringPage() {
   const [showMenu, setShowMenu] = useState(false);
   const [showCloseInnings, setShowCloseInnings] = useState(false);
   const [showCloseMatch, setShowCloseMatch] = useState(false);
+  const [showInningsSettings, setShowInningsSettings] = useState(false);
+  const [settingsOvers, setSettingsOvers] = useState('');
+  const [settingsLastManStands, setSettingsLastManStands] = useState(false);
   const [pendingInningsBreak, setPendingInningsBreak] = useState<{ match: Match; completedInnings: Innings } | null>(null);
   const { isDark, toggle: toggleTheme } = useTheme();
+
+  useEffect(() => {
+    if (!match) return;
+    setSettingsOvers(String(match.config.overs));
+    setSettingsLastManStands(match.rules.lastManStands);
+  }, [match]);
 
   useEffect(() => {
     (async () => {
@@ -446,6 +455,11 @@ export default function ScoringPage() {
                     onClick={() => { setShowMenu(false); toggleTheme(); }}
                   />
                   <MenuAction
+                    label="Innings Settings"
+                    sub="Update overs & last-man-stands"
+                    onClick={() => { setShowMenu(false); setShowInningsSettings(true); }}
+                  />
+                  <MenuAction
                     label={innings.inningsNumber === 1 ? 'Close 1st Innings' : 'Close 2nd Innings'}
                     sub={innings.inningsNumber === 1 ? 'Declare or abandon 1st inn' : 'Declare or end match'}
                     onClick={() => { setShowMenu(false); setShowCloseInnings(true); }}
@@ -604,6 +618,53 @@ export default function ScoringPage() {
         <div className="flex gap-3">
           <Button variant="secondary" fullWidth onClick={() => setShowPauseConfirm(false)}>Stay</Button>
           <Button variant="gold" fullWidth onClick={() => navigate('/')}>Go to Home</Button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showInningsSettings} onClose={() => setShowInningsSettings(false)} title="Innings Settings">
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs text-muted font-semibold">Total Overs (match)</label>
+            <input
+              type="number"
+              min={Math.max(1, stats.overs + 1)}
+              value={settingsOvers}
+              onChange={(e) => setSettingsOvers(e.target.value)}
+              className="mt-1 w-full bg-pitch border border-pitch-light rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-gold/50"
+            />
+            <p className="text-[11px] text-muted mt-1">Current over: {stats.overs + 1}. You can only increase total overs.</p>
+          </div>
+          <label className="flex items-center justify-between bg-pitch border border-pitch-light rounded-xl px-4 py-3">
+            <span className="text-sm text-white font-semibold">Last Man Stands</span>
+            <input type="checkbox" checked={settingsLastManStands} onChange={(e) => setSettingsLastManStands(e.target.checked)} />
+          </label>
+          <div className="flex gap-3">
+            <Button variant="secondary" fullWidth onClick={() => setShowInningsSettings(false)}>Cancel</Button>
+            <Button
+              variant="gold"
+              fullWidth
+              onClick={async () => {
+                const parsedOvers = Number(settingsOvers);
+                if (!match || !Number.isFinite(parsedOvers)) return;
+                const minOvers = Math.max(1, stats.overs + (stats.balls > 0 ? 1 : 0));
+                if (parsedOvers < minOvers) {
+                  addToast(`Overs must be at least ${minOvers}`, 'error');
+                  return;
+                }
+                const updatedMatch: Match = {
+                  ...match,
+                  config: { ...match.config, overs: parsedOvers },
+                  rules: { ...match.rules, lastManStands: settingsLastManStands },
+                };
+                await upsertMatch(updatedMatch);
+                await loadInnings(updatedMatch, innings);
+                setShowInningsSettings(false);
+                addToast('Innings settings updated', 'success');
+              }}
+            >
+              Save
+            </Button>
+          </div>
         </div>
       </Modal>
 

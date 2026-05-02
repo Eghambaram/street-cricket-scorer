@@ -41,7 +41,8 @@ const ROLE_ACTIVE: Record<PlayerRole, string> = {
 
 const ROLES: PlayerRole[] = ['batsman', 'bowler', 'allrounder', 'wicketkeeper'];
 const SKILLS: SkillLevel[] = ['low', 'medium', 'high'];
-const SKILL_ICONS: Record<SkillLevel, string> = { low: '🟢', medium: '🟡', high: '🔴' };
+const SKILL_ICONS: Record<SkillLevel, string> = { low: '▁', medium: '▅', high: '█' };
+const SKILL_LABELS: Record<SkillLevel, string> = { low: 'Low', medium: 'Medium', high: 'High' };
 const SKILL_COLORS: Record<SkillLevel, string> = {
   low: 'bg-muted/20 text-muted border border-white/10',
   medium: 'bg-amber/20 text-amber border border-amber/40',
@@ -1200,8 +1201,11 @@ function PlayerRow({
         <span className="text-white text-sm truncate">{player.name}</span>
       </button>
       {player.skillLevel && (
-        <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', SKILL_COLORS[player.skillLevel])}>
-          {SKILL_ICONS[player.skillLevel]}
+        <span
+          title={`Skill: ${SKILL_LABELS[player.skillLevel]}`}
+          className={cn('text-[10px] font-black px-2 py-0.5 rounded shrink-0 tracking-[0.12em]', SKILL_COLORS[player.skillLevel])}
+        >
+          {`${SKILL_ICONS[player.skillLevel]}${SKILL_ICONS[player.skillLevel]}${SKILL_ICONS[player.skillLevel]}`}
         </span>
       )}
       {player.role && (
