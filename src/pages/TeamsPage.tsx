@@ -41,7 +41,7 @@ const ROLE_ACTIVE: Record<PlayerRole, string> = {
 
 const ROLES: PlayerRole[] = ['batsman', 'bowler', 'allrounder', 'wicketkeeper'];
 const SKILLS: SkillLevel[] = ['low', 'medium', 'high'];
-const SKILL_LABELS: Record<SkillLevel, string> = { low: 'L', medium: 'M', high: 'H' };
+const SKILL_ICONS: Record<SkillLevel, string> = { low: '🟢', medium: '🟡', high: '🔴' };
 const SKILL_COLORS: Record<SkillLevel, string> = {
   low: 'bg-muted/20 text-muted border border-white/10',
   medium: 'bg-amber/20 text-amber border border-amber/40',
@@ -1048,7 +1048,7 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
               <div className="flex gap-1.5 flex-wrap">
                 {SKILLS.map((lv) => (
                   <button key={lv} onClick={() => setNewPlayerSkill(lv)} className={cn('px-2.5 py-1 rounded-lg text-xs font-bold transition-colors', newPlayerSkill === lv ? SKILL_COLORS[lv] : 'bg-pitch-light text-muted hover:text-white')}>
-                    Skill {SKILL_LABELS[lv]}
+                    {SKILL_ICONS[lv]} Skill
                   </button>
                 ))}
               </div>
@@ -1180,7 +1180,7 @@ function PlayerRow({
         <div className="flex gap-1.5 flex-wrap">
           {SKILLS.map((lv) => (
             <button key={lv} onClick={() => onChangeSkill(lv)} className={cn('px-2.5 py-1 rounded-lg text-xs font-bold transition-colors', editSkill === lv ? SKILL_COLORS[lv] : 'bg-pitch-light text-muted hover:text-white')}>
-              Skill {SKILL_LABELS[lv]}
+              {SKILL_ICONS[lv]} Skill
             </button>
           ))}
         </div>
@@ -1201,7 +1201,7 @@ function PlayerRow({
       </button>
       {player.skillLevel && (
         <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', SKILL_COLORS[player.skillLevel])}>
-          {SKILL_LABELS[player.skillLevel]}
+          {SKILL_ICONS[player.skillLevel]}
         </span>
       )}
       {player.role && (
