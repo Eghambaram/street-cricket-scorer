@@ -93,7 +93,7 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
       overIndex,
       ballIndex,
       deliverySequence,
-      batsmanId: innings.currentBatsmanIds[innings.strikerIndex] ?? '',
+      batsmanId: getEffectiveStrikerId(innings, match),
       bowlerId: innings.currentBowlerId ?? '',
       runs,
       extras,
@@ -188,21 +188,11 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
         const ids: [string, string | null] = [...innings.currentBatsmanIds] as [string, string | null];
         ids[nonStrikerSlot] = '';
         updatedInnings.currentBatsmanIds = ids;
-        updatedInnings.strikerIndex = computeNextStrikerIndex(
-          strikerSlot,
-          runs,
-          isWide,
-          isOverComplete
-        );
+        updatedInnings.strikerIndex = resolveNextStrikerIndex(updatedInnings, match, strikerSlot, runs, isWide, isOverComplete);
       }
     } else {
       // No wicket: standard strike rotation
-      updatedInnings.strikerIndex = computeNextStrikerIndex(
-        updatedInnings.strikerIndex,
-        runs,
-        isWide,
-        isOverComplete
-      );
+      updatedInnings.strikerIndex = resolveNextStrikerIndex(updatedInnings, match, updatedInnings.strikerIndex, runs, isWide, isOverComplete);
     }
 
     // ── Innings-over detection ────────────────────────────────────────────────
@@ -344,6 +334,23 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
   clear: () => set({ match: null, innings: null, deliveries: [], stats: null, lastDelivery: null }),
 }));
 
+
+function getEffectiveStrikerId(innings: Innings, match: Match | undefined): string {
+  const strikerId = innings.currentBatsmanIds[innings.strikerIndex] ?? '';
+  if (strikerId) return strikerId;
+  if (!match?.rules.lastManStands) return '';
+  return (innings.currentBatsmanIds.find((id) => !!id && id !== '') ?? '') as string;
+}
+
+function resolveNextStrikerIndex(innings: Innings, match: Match | undefined, current: 0 | 1, runs: number, isWide: boolean, isOverComplete: boolean): 0 | 1 {
+  const next = computeNextStrikerIndex(current, runs, isWide, isOverComplete);
+  if (!match?.rules.lastManStands) return next;
+  const currentId = innings.currentBatsmanIds[current] ?? '';
+  const nextId = innings.currentBatsmanIds[next] ?? '';
+  if (currentId && !nextId) return current;
+  return next;
+}
+
 // ─── Undo helper: re-derive full innings live state from delivery history ───────
 function recomputeInningsLiveState(innings: Innings, deliveries: Delivery[], match?: Match): Innings {
   const dismissedIds = new Set(
@@ -374,6 +381,7 @@ function recomputeInningsLiveState(innings: Innings, deliveries: Delivery[], mat
   // We start with strikerIndex 0 (as set at innings creation) and simulate each
   // delivery's rotation, including end-of-over flips.
   let strikerIdx: 0 | 1 = 0;
+  const simInnings: Innings = { ...innings };
   for (let i = 0; i < deliveries.length; i++) {
     const d = deliveries[i];
     const isWide = d.extras.wide > 0;
@@ -403,10 +411,10 @@ function recomputeInningsLiveState(innings: Innings, deliveries: Delivery[], mat
         if (wasLastLegal) strikerIdx = (strikerIdx ^ 1) as 0 | 1;
       } else {
         // Non-striker out: apply normal rotation
-        strikerIdx = computeNextStrikerIndex(strikerIdx, d.runs, isWide, wasLastLegal);
+        strikerIdx = resolveNextStrikerIndex(simInnings, match, strikerIdx, d.runs, isWide, wasLastLegal);
       }
     } else {
-      strikerIdx = computeNextStrikerIndex(strikerIdx, d.runs, isWide, wasLastLegal);
+      strikerIdx = resolveNextStrikerIndex(simInnings, match, strikerIdx, d.runs, isWide, wasLastLegal);
     }
   }
 
