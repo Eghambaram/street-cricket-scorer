@@ -159,6 +159,16 @@ export default function ScoringPage() {
         // Last-man-stands: if no unused batter remains, allow the surviving
         // batter to continue alone by occupying both crease slots.
         if (match.rules.lastManStands && getRemainingBatsmenCount(match, freshInnings) === 0) {
+          const survivorId = (freshInnings.currentBatsmanIds.find((id) => !!id && id !== '') ?? '') as string;
+          if (survivorId) {
+            const loneBatterInnings: Innings = {
+              ...freshInnings,
+              currentBatsmanIds: [survivorId, ''],
+              strikerIndex: 0,
+            };
+            await saveInnings(loneBatterInnings);
+            await loadInnings(match, loneBatterInnings);
+          }
           await handlePostDelivery(result);
           return;
         }
