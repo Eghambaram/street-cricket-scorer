@@ -32,6 +32,7 @@ import type { Innings, Match } from '@/types/match.types';
 import type { DeliveryExtras, Wicket } from '@/types/delivery.types';
 import { computeInningsStats, buildResultText } from '@/utils/cricket';
 import { formatScore } from '@/utils/format';
+import { canContinueWithLoneBatter, getRemainingBatsmenCount } from '@/utils/inningsFlow';
 import { v4 as uuid } from 'uuid';
 
 type ExtrasType = 'wide' | 'no_ball' | 'bye' | 'leg_bye' | null;
@@ -58,6 +59,7 @@ export default function ScoringPage() {
   const [showMenu, setShowMenu] = useState(false);
   const [showCloseInnings, setShowCloseInnings] = useState(false);
   const [showCloseMatch, setShowCloseMatch] = useState(false);
+  const [pendingInningsBreak, setPendingInningsBreak] = useState<{ match: Match; completedInnings: Innings } | null>(null);
   const { isDark, toggle: toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -67,7 +69,20 @@ export default function ScoringPage() {
       if (!m) { navigate('/'); return; }
       const allInnings = await getMatchInnings(matchId);
       const activeInnings = allInnings.find((i) => i.status === 'active');
-      if (!activeInnings) { navigate(`/match/${matchId}/summary`); return; }
+      if (!activeInnings) {
+        const inn1 = allInnings.find((i) => i.inningsNumber === 1);
+        const inn2 = allInnings.find((i) => i.inningsNumber === 2);
+        if (m.status !== 'completed' && inn1?.status === 'completed' && !inn2) {
+          const d = await getInningsDeliveries(inn1.id);
+          setInn1Stats(computeInningsStats(d));
+          setPendingInningsBreak({ match: m, completedInnings: inn1 });
+          setShowInningsBreak(true);
+          setLoading(false);
+          return;
+        }
+        navigate(`/match/${matchId}/summary`);
+        return;
+      }
       // If 2nd innings, load inn1Stats
       if (activeInnings.inningsNumber === 2) {
         const inn1 = allInnings.find((i) => i.inningsNumber === 1);
@@ -86,11 +101,16 @@ export default function ScoringPage() {
   // Need bowler selection on load if currentBowlerId is null
   const needsBowlerSelection = innings && !innings.currentBowlerId;
 
-  // Need batsman selection if a slot is empty and innings is still active
-  const needsBatsmanSelection =
-    innings &&
-    innings.status === 'active' &&
-    innings.currentBatsmanIds.some((id) => id === '' || id == null);
+  // Need batsman selection if a slot is empty and innings is still active.
+  // Exception: Last Man Stands allows continuing with a lone batter when no
+  // unused batter remains.
+  const needsBatsmanSelection = (() => {
+    if (!innings || innings.status !== 'active') return false;
+    const hasEmptySlot = innings.currentBatsmanIds.some((id) => id === '' || id == null);
+    if (!hasEmptySlot) return false;
+    if (!match) return true;
+    return !canContinueWithLoneBatter(match, innings);
+  })();
 
   // Ball buttons should be disabled when either selection is pending
   const ballsDisabled = (needsBowlerSelection || needsBatsmanSelection) ?? undefined;
@@ -121,7 +141,7 @@ export default function ScoringPage() {
 
   const handleWicketConfirm = async (wicket: Wicket, nextBatsmanId: string | null) => {
     setShowWicket(false);
-    if (!innings) return;
+    if (!innings || !match) return;
 
     // Score the wicket FIRST — store clears the dismissed batsman's slot.
     const result = await score({ runs: 0, extras: { wide: 0, noBall: 0, bye: 0, legBye: 0 }, wicket });
@@ -134,10 +154,16 @@ export default function ScoringPage() {
         await saveInnings(updatedInnings);
         await loadInnings(match!, updatedInnings);
       } else {
-        // No batsman selected (or none available yet) — determine which slot
-        // is empty and open the ChangeBatsmanModal so the scorer MUST pick one
-        // before any more balls can be recorded.
         const freshInnings = useScoringStore.getState().innings!;
+
+        // Last-man-stands: if no unused batter remains, allow the surviving
+        // batter to continue alone by occupying both crease slots.
+        if (match.rules.lastManStands && getRemainingBatsmenCount(match, freshInnings) === 0) {
+          await handlePostDelivery(result);
+          return;
+        }
+
+        // No batsman selected (or none available yet) — force manual selection.
         const emptySlot = freshInnings.currentBatsmanIds[0] === '' || freshInnings.currentBatsmanIds[0] == null
           ? 0
           : 1;
@@ -258,15 +284,16 @@ export default function ScoringPage() {
   };
 
   const handleInningsBreakStart = async ({ striker, nonStriker, bowler }: { striker: string; nonStriker: string; bowler: string }) => {
-    if (!match) return;
-    const allInnings = await getMatchInnings(match.id);
+    const baseMatch = match ?? pendingInningsBreak?.match;
+    if (!baseMatch) return;
+    const allInnings = await getMatchInnings(baseMatch.id);
     const inn1 = allInnings.find((i) => i.inningsNumber === 1);
     const battingTeamId = inn1!.bowlingTeamId;
     const bowlingTeamId = inn1!.battingTeamId;
 
     const newInnings: Innings = {
       id: uuid(),
-      matchId: match.id,
+      matchId: baseMatch.id,
       inningsNumber: 2,
       battingTeamId,
       bowlingTeamId,
@@ -277,11 +304,12 @@ export default function ScoringPage() {
       battingOrder: [striker, nonStriker],
     };
 
-    const updatedMatch: Match = { ...match, status: 'innings_2', inningsIds: [...match.inningsIds, newInnings.id] };
+    const updatedMatch: Match = { ...baseMatch, status: 'innings_2', inningsIds: [...baseMatch.inningsIds, newInnings.id] };
     await saveInnings(newInnings);
     await upsertMatch(updatedMatch);
     await loadInnings(updatedMatch, newInnings);
     setShowInningsBreak(false);
+    setPendingInningsBreak(null);
   };
 
   const completeMatch = async (inn2Stats: typeof stats) => {
@@ -329,7 +357,22 @@ export default function ScoringPage() {
     );
   }
 
-  if (!match || !innings || !stats) return null;
+  if (!match || !innings || !stats) {
+    if (pendingInningsBreak && inn1Stats) {
+      return (
+        <div className="min-h-screen bg-pitch">
+          <InningsBreakModal
+            isOpen={showInningsBreak}
+            match={pendingInningsBreak.match}
+            completedInnings={pendingInningsBreak.completedInnings}
+            inn1Stats={inn1Stats}
+            onStart={handleInningsBreakStart}
+          />
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="h-screen bg-pitch flex flex-col overflow-hidden">
