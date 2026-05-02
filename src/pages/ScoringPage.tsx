@@ -32,6 +32,7 @@ import type { Innings, Match } from '@/types/match.types';
 import type { DeliveryExtras, Wicket } from '@/types/delivery.types';
 import { computeInningsStats, buildResultText } from '@/utils/cricket';
 import { formatScore } from '@/utils/format';
+import { canContinueWithLoneBatter, getRemainingBatsmenCount } from '@/utils/inningsFlow';
 import { v4 as uuid } from 'uuid';
 
 type ExtrasType = 'wide' | 'no_ball' | 'bye' | 'leg_bye' | null;
@@ -100,11 +101,16 @@ export default function ScoringPage() {
   // Need bowler selection on load if currentBowlerId is null
   const needsBowlerSelection = innings && !innings.currentBowlerId;
 
-  // Need batsman selection if a slot is empty and innings is still active
-  const needsBatsmanSelection =
-    innings &&
-    innings.status === 'active' &&
-    innings.currentBatsmanIds.some((id) => id === '' || id == null);
+  // Need batsman selection if a slot is empty and innings is still active.
+  // Exception: Last Man Stands allows continuing with a lone batter when no
+  // unused batter remains.
+  const needsBatsmanSelection = (() => {
+    if (!innings || innings.status !== 'active') return false;
+    const hasEmptySlot = innings.currentBatsmanIds.some((id) => id === '' || id == null);
+    if (!hasEmptySlot) return false;
+    if (!match) return true;
+    return !canContinueWithLoneBatter(match, innings);
+  })();
 
   // Ball buttons should be disabled when either selection is pending
   const ballsDisabled = (needsBowlerSelection || needsBatsmanSelection) ?? undefined;
