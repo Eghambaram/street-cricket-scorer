@@ -6,10 +6,13 @@ export interface Player {
 
 export type PlayerRole = 'batsman' | 'bowler' | 'allrounder' | 'wicketkeeper';
 
+export type SkillLevel = 'low' | 'medium' | 'high';
+
 export interface SavedPlayer {
   id: string;
   name: string;
   role?: PlayerRole;
+  skillLevel?: SkillLevel;
   statsBaselineAt?: number;  // epoch ms — stats counted from this date for this player
 }
 
