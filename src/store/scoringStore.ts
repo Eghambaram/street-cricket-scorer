@@ -86,6 +86,7 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
     const deliverySequence = deliveries.length;
 
     const totalRuns = runs + extras.wide + extras.noBall + extras.bye + extras.legBye;
+    const runsForRotation = runs + extras.bye + extras.legBye + Math.max(0, extras.wide - 1);
 
     const delivery: Delivery = {
       id: uuid(),
@@ -188,11 +189,11 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
         const ids: [string, string | null] = [...innings.currentBatsmanIds] as [string, string | null];
         ids[nonStrikerSlot] = '';
         updatedInnings.currentBatsmanIds = ids;
-        updatedInnings.strikerIndex = resolveNextStrikerIndex(updatedInnings, match, strikerSlot, runs, isWide, isOverComplete);
+        updatedInnings.strikerIndex = resolveNextStrikerIndex(updatedInnings, match, strikerSlot, runsForRotation, isWide, isOverComplete);
       }
     } else {
       // No wicket: standard strike rotation
-      updatedInnings.strikerIndex = resolveNextStrikerIndex(updatedInnings, match, updatedInnings.strikerIndex, runs, isWide, isOverComplete);
+      updatedInnings.strikerIndex = resolveNextStrikerIndex(updatedInnings, match, updatedInnings.strikerIndex, runsForRotation, isWide, isOverComplete);
     }
 
     // ── Innings-over detection ────────────────────────────────────────────────
@@ -342,8 +343,8 @@ function getEffectiveStrikerId(innings: Innings, match: Match | undefined): stri
   return (innings.currentBatsmanIds.find((id) => !!id && id !== '') ?? '') as string;
 }
 
-function resolveNextStrikerIndex(innings: Innings, match: Match | undefined, current: 0 | 1, runs: number, isWide: boolean, isOverComplete: boolean): 0 | 1 {
-  const next = computeNextStrikerIndex(current, runs, isWide, isOverComplete);
+function resolveNextStrikerIndex(innings: Innings, match: Match | undefined, current: 0 | 1, runsForRotation: number, isWide: boolean, isOverComplete: boolean): 0 | 1 {
+  const next = computeNextStrikerIndex(current, runsForRotation, isWide, isOverComplete);
   if (!match?.rules.lastManStands) return next;
   const currentId = innings.currentBatsmanIds[current] ?? '';
   const nextId = innings.currentBatsmanIds[next] ?? '';
@@ -411,10 +412,10 @@ function recomputeInningsLiveState(innings: Innings, deliveries: Delivery[], mat
         if (wasLastLegal) strikerIdx = (strikerIdx ^ 1) as 0 | 1;
       } else {
         // Non-striker out: apply normal rotation
-        strikerIdx = resolveNextStrikerIndex(simInnings, match, strikerIdx, d.runs, isWide, wasLastLegal);
+        strikerIdx = resolveNextStrikerIndex(simInnings, match, strikerIdx, (d.runs + d.extras.bye + d.extras.legBye + Math.max(0, d.extras.wide - 1)), isWide, wasLastLegal);
       }
     } else {
-      strikerIdx = resolveNextStrikerIndex(simInnings, match, strikerIdx, d.runs, isWide, wasLastLegal);
+      strikerIdx = resolveNextStrikerIndex(simInnings, match, strikerIdx, (d.runs + d.extras.bye + d.extras.legBye + Math.max(0, d.extras.wide - 1)), isWide, wasLastLegal);
     }
   }
 
