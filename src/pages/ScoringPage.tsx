@@ -32,6 +32,7 @@ import type { Innings, Match } from '@/types/match.types';
 import type { DeliveryExtras, Wicket } from '@/types/delivery.types';
 import { computeInningsStats, buildResultText } from '@/utils/cricket';
 import { formatScore } from '@/utils/format';
+import { canContinueWithLoneBatter, getRemainingBatsmenCount } from '@/utils/inningsFlow';
 import { v4 as uuid } from 'uuid';
 
 type ExtrasType = 'wide' | 'no_ball' | 'bye' | 'leg_bye' | null;
@@ -107,19 +108,8 @@ export default function ScoringPage() {
     if (!innings || innings.status !== 'active') return false;
     const hasEmptySlot = innings.currentBatsmanIds.some((id) => id === '' || id == null);
     if (!hasEmptySlot) return false;
-    if (!match?.rules.lastManStands) return true;
-
-    const battingTeam = match.teams.find((t) => t.id === innings.battingTeamId);
-    const usedPlayerIds = new Set([
-      ...innings.battingOrder,
-      ...(innings.retiredHurtIds ?? []),
-    ]);
-    const remainingBatsmen = battingTeam?.players.filter((p) => !usedPlayerIds.has(p.id)) ?? [];
-    const activeBatsmen = innings.currentBatsmanIds.filter((id) => !!id && id !== '').length;
-
-    // Lone-batter continuation: one active batter + no replacements left.
-    if (activeBatsmen === 1 && remainingBatsmen.length === 0) return false;
-    return true;
+    if (!match) return true;
+    return !canContinueWithLoneBatter(match, innings);
   })();
 
   // Ball buttons should be disabled when either selection is pending
@@ -168,18 +158,9 @@ export default function ScoringPage() {
 
         // Last-man-stands: if no unused batter remains, allow the surviving
         // batter to continue alone by occupying both crease slots.
-        if (match.rules.lastManStands) {
-          const battingTeam = match.teams.find((t) => t.id === freshInnings.battingTeamId);
-          const usedPlayerIds = new Set([
-            ...freshInnings.battingOrder,
-            ...(freshInnings.retiredHurtIds ?? []),
-          ]);
-          const remainingBatsmen = battingTeam?.players.filter((p) => !usedPlayerIds.has(p.id)) ?? [];
-
-          if (remainingBatsmen.length === 0) {
-            await handlePostDelivery(result);
-            return;
-          }
+        if (match.rules.lastManStands && getRemainingBatsmenCount(match, freshInnings) === 0) {
+          await handlePostDelivery(result);
+          return;
         }
 
         // No batsman selected (or none available yet) — force manual selection.
