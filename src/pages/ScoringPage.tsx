@@ -58,6 +58,7 @@ export default function ScoringPage() {
   const [showMenu, setShowMenu] = useState(false);
   const [showCloseInnings, setShowCloseInnings] = useState(false);
   const [showCloseMatch, setShowCloseMatch] = useState(false);
+  const [pendingInningsBreak, setPendingInningsBreak] = useState<{ match: Match; completedInnings: Innings } | null>(null);
   const { isDark, toggle: toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -67,7 +68,20 @@ export default function ScoringPage() {
       if (!m) { navigate('/'); return; }
       const allInnings = await getMatchInnings(matchId);
       const activeInnings = allInnings.find((i) => i.status === 'active');
-      if (!activeInnings) { navigate(`/match/${matchId}/summary`); return; }
+      if (!activeInnings) {
+        const inn1 = allInnings.find((i) => i.inningsNumber === 1);
+        const inn2 = allInnings.find((i) => i.inningsNumber === 2);
+        if (m.status !== 'completed' && inn1?.status === 'completed' && !inn2) {
+          const d = await getInningsDeliveries(inn1.id);
+          setInn1Stats(computeInningsStats(d));
+          setPendingInningsBreak({ match: m, completedInnings: inn1 });
+          setShowInningsBreak(true);
+          setLoading(false);
+          return;
+        }
+        navigate(`/match/${matchId}/summary`);
+        return;
+      }
       // If 2nd innings, load inn1Stats
       if (activeInnings.inningsNumber === 2) {
         const inn1 = allInnings.find((i) => i.inningsNumber === 1);
@@ -258,15 +272,16 @@ export default function ScoringPage() {
   };
 
   const handleInningsBreakStart = async ({ striker, nonStriker, bowler }: { striker: string; nonStriker: string; bowler: string }) => {
-    if (!match) return;
-    const allInnings = await getMatchInnings(match.id);
+    const baseMatch = match ?? pendingInningsBreak?.match;
+    if (!baseMatch) return;
+    const allInnings = await getMatchInnings(baseMatch.id);
     const inn1 = allInnings.find((i) => i.inningsNumber === 1);
     const battingTeamId = inn1!.bowlingTeamId;
     const bowlingTeamId = inn1!.battingTeamId;
 
     const newInnings: Innings = {
       id: uuid(),
-      matchId: match.id,
+      matchId: baseMatch.id,
       inningsNumber: 2,
       battingTeamId,
       bowlingTeamId,
@@ -277,11 +292,12 @@ export default function ScoringPage() {
       battingOrder: [striker, nonStriker],
     };
 
-    const updatedMatch: Match = { ...match, status: 'innings_2', inningsIds: [...match.inningsIds, newInnings.id] };
+    const updatedMatch: Match = { ...baseMatch, status: 'innings_2', inningsIds: [...baseMatch.inningsIds, newInnings.id] };
     await saveInnings(newInnings);
     await upsertMatch(updatedMatch);
     await loadInnings(updatedMatch, newInnings);
     setShowInningsBreak(false);
+    setPendingInningsBreak(null);
   };
 
   const completeMatch = async (inn2Stats: typeof stats) => {
@@ -329,7 +345,22 @@ export default function ScoringPage() {
     );
   }
 
-  if (!match || !innings || !stats) return null;
+  if (!match || !innings || !stats) {
+    if (pendingInningsBreak && inn1Stats) {
+      return (
+        <div className="min-h-screen bg-pitch">
+          <InningsBreakModal
+            isOpen={showInningsBreak}
+            match={pendingInningsBreak.match}
+            completedInnings={pendingInningsBreak.completedInnings}
+            inn1Stats={inn1Stats}
+            onStart={handleInningsBreakStart}
+          />
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="h-screen bg-pitch flex flex-col overflow-hidden">
