@@ -4,14 +4,14 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { cn } from '@/utils/cn';
 import type { Innings, Match } from '@/types/match.types';
-import type { WicketType, Wicket } from '@/types/delivery.types';
+import type { WicketType, Wicket, DeliveryExtras } from '@/types/delivery.types';
 
 interface Props {
   isOpen: boolean;
   match: Match;
   innings: Innings;
   isFreeHit?: boolean;
-  onConfirm: (wicket: Wicket, nextBatsmanId: string | null) => void;
+  onConfirm: (wicket: Wicket, nextBatsmanId: string | null, runs: number, extras: DeliveryExtras) => void;
   onRetireHurt: (batsmanId: string, nextBatsmanId: string | null) => void;
   onCancel: () => void;
 }
@@ -123,6 +123,8 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
   const [runOutBatsmanId, setRunOutBatsmanId] = useState('');
   const [nextBatsmanId, setNextBatsmanId] = useState('');
   const [retireeBatsmanId, setRetireeBatsmanId] = useState('');
+  const [runOutRuns, setRunOutRuns] = useState(0);
+  const [runOutExtraType, setRunOutExtraType] = useState<'none' | 'bye' | 'leg_bye' | 'wide' | 'no_ball'>('none');
 
   const noLBW = match.rules.noLBW;
   const isSingle = match.config.isSinglePlayerMode;
@@ -184,6 +186,8 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
     setRunOutBatsmanId('');
     setNextBatsmanId('');
     setRetireeBatsmanId('');
+    setRunOutRuns(0);
+    setRunOutExtraType('none');
   }, [isOpen]);
 
   // Build summary chip parts
@@ -218,6 +222,17 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
     if (prevStep) setStep(prevStep);
   };
 
+
+
+  const getRunOutDeliveryInput = (): { runs: number; extras: DeliveryExtras } => {
+    if (selectedType !== 'run_out') return { runs: 0, extras: { wide: 0, noBall: 0, bye: 0, legBye: 0 } };
+    if (runOutExtraType === 'wide') return { runs: 0, extras: { wide: 1 + runOutRuns, noBall: 0, bye: 0, legBye: 0 } };
+    if (runOutExtraType === 'no_ball') return { runs: runOutRuns, extras: { wide: 0, noBall: 1, bye: 0, legBye: 0 } };
+    if (runOutExtraType === 'bye') return { runs: 0, extras: { wide: 0, noBall: 0, bye: runOutRuns, legBye: 0 } };
+    if (runOutExtraType === 'leg_bye') return { runs: 0, extras: { wide: 0, noBall: 0, bye: 0, legBye: runOutRuns } };
+    return { runs: runOutRuns, extras: { wide: 0, noBall: 0, bye: 0, legBye: 0 } };
+  };
+
   const handleDismissalConfirm = () => {
     if (!selectedType) return;
     const wicket: Wicket = {
@@ -228,7 +243,8 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
           ? runOutBatsmanId || strikerId || undefined
           : undefined,
     };
-    onConfirm(wicket, needsNextBatsman ? (nextBatsmanId || null) : null);
+    const input = getRunOutDeliveryInput();
+    onConfirm(wicket, needsNextBatsman ? (nextBatsmanId || null) : null, input.runs, input.extras);
   };
 
   const handleRetireHurtConfirm = () => {
@@ -325,6 +341,34 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
                         />
                       ) : null
                     )}
+                  </div>
+                </div>
+              )}
+
+
+
+              {selectedType === 'run_out' && (
+                <div className="mb-4 bg-pitch-dark border border-pitch-light rounded-xl p-3">
+                  <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Runs completed on this ball</p>
+                  <div className="grid grid-cols-5 gap-1.5 mb-2">
+                    {(['none','bye','leg_bye','wide','no_ball'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setRunOutExtraType(type)}
+                        className={cn('py-1.5 rounded-lg text-[11px] font-bold border', runOutExtraType === type ? 'bg-gold/20 border-gold text-gold' : 'bg-pitch border-pitch-light text-muted')}
+                      >
+                        {type === 'none' ? 'Bat' : type === 'leg_bye' ? 'LB' : type === 'no_ball' ? 'NB' : type.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {[0,1,2,3,4,5,6].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setRunOutRuns(n)}
+                        className={cn('py-1.5 rounded-lg text-xs font-bold border', runOutRuns === n ? 'bg-wicket/20 border-wicket text-wicket' : 'bg-pitch border-pitch-light text-muted')}
+                      >{n}</button>
+                    ))}
                   </div>
                 </div>
               )}

@@ -139,12 +139,12 @@ export default function ScoringPage() {
     await handlePostDelivery(result);
   };
 
-  const handleWicketConfirm = async (wicket: Wicket, nextBatsmanId: string | null) => {
+  const handleWicketConfirm = async (wicket: Wicket, nextBatsmanId: string | null, runs: number, extras: DeliveryExtras) => {
     setShowWicket(false);
     if (!innings || !match) return;
 
     // Score the wicket FIRST — store clears the dismissed batsman's slot.
-    const result = await score({ runs: 0, extras: { wide: 0, noBall: 0, bye: 0, legBye: 0 }, wicket });
+    const result = await score({ runs, extras, wicket });
 
     if (!result.isInningsOver) {
       if (nextBatsmanId) {
@@ -231,6 +231,30 @@ export default function ScoringPage() {
     setChangeBatsmanPosition(null);
     const name = match?.teams.flatMap((t) => t.players).find((p) => p.id === playerId)?.name;
     if (name) addToast(`${name} is in`, 'success');
+  };
+
+
+  const handleAddBowlerToTeam = async (name: string) => {
+    if (!match || !innings) return;
+    const teamIndex = match.teams.findIndex((t) => t.id === innings.bowlingTeamId);
+    if (teamIndex < 0) return;
+    const exists = match.teams[teamIndex].players.some((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (exists) {
+      addToast(`${name} already in bowling team`, 'info');
+      return;
+    }
+    const [teamA, teamB] = match.teams;
+    const updatedTeams: Match['teams'] = teamIndex === 0
+      ? [{ ...teamA, players: [...teamA.players, { id: uuid(), name, teamId: innings.bowlingTeamId }] }, teamB]
+      : [teamA, { ...teamB, players: [...teamB.players, { id: uuid(), name, teamId: innings.bowlingTeamId }] }];
+
+    const updatedMatch: Match = {
+      ...match,
+      teams: updatedTeams,
+    };
+    await upsertMatch(updatedMatch);
+    await loadInnings(updatedMatch, innings);
+    addToast(`${name} added to bowling team`, 'success');
   };
 
   const handleChangeBowler = async (bowlerId: string) => {
@@ -562,6 +586,7 @@ export default function ScoringPage() {
         completedOverRuns={completedOverRuns}
         completedOverWickets={completedOverWickets}
         onSelect={handleNewOverBowler}
+        onAddBowler={handleAddBowlerToTeam}
       />
 
       {inn1Stats && (
@@ -602,6 +627,7 @@ export default function ScoringPage() {
         innings={innings}
         stats={stats}
         onConfirm={handleChangeBowler}
+        onAddBowler={handleAddBowlerToTeam}
         onClose={() => setShowChangeBowler(false)}
       />
 

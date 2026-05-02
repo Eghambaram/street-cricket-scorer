@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import type { SavedTeam, SavedPlayer, PlayerRole } from '@/types/player.types';
+import type { SavedTeam, SavedPlayer, PlayerRole, SkillLevel } from '@/types/player.types';
 import {
   getAllSavedTeams,
   saveSavedTeam,
@@ -21,9 +21,9 @@ interface TeamsState {
   createTeam: (name: string) => Promise<SavedTeam>;
   updateTeam: (team: SavedTeam) => Promise<void>;
   removeTeam: (id: string) => Promise<void>;
-  addPlayer: (teamId: string, name: string, role?: PlayerRole) => Promise<void>;
+  addPlayer: (teamId: string, name: string, role?: PlayerRole, skillLevel?: SkillLevel) => Promise<void>;
   removePlayer: (teamId: string, playerId: string) => Promise<void>;
-  updatePlayer: (teamId: string, playerId: string, updates: Partial<Pick<SavedPlayer, 'name' | 'role'>>) => Promise<void>;
+  updatePlayer: (teamId: string, playerId: string, updates: Partial<Pick<SavedPlayer, 'name' | 'role' | 'skillLevel'>>) => Promise<void>;
   resetPlayerStats: (teamId: string, playerId: string) => Promise<void>;
   resetTeamStats: (teamId: string) => Promise<void>;
   clearPlayerStats: (teamId: string, playerId: string) => Promise<void>;
@@ -64,8 +64,8 @@ export const useTeamsStore = create<TeamsState>((set) => ({
     set((s) => ({ teams: s.teams.filter((t) => t.id !== id) }));
   },
 
-  addPlayer: async (teamId: string, name: string, role?: PlayerRole) => {
-    const player: SavedPlayer = { id: uuid(), name: name.trim(), role };
+  addPlayer: async (teamId: string, name: string, role?: PlayerRole, skillLevel?: SkillLevel) => {
+    const player: SavedPlayer = { id: uuid(), name: name.trim(), role, skillLevel };
     await addPlayerToTeam(teamId, player);
     set((s) => ({
       teams: s.teams.map((t) =>

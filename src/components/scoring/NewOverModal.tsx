@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, UserPlus } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { cn } from '@/utils/cn';
@@ -16,6 +16,7 @@ interface Props {
   completedOverRuns: number;
   completedOverWickets: number;
   onSelect: (bowlerId: string) => void;
+  onAddBowler: (name: string) => Promise<void> | void;
 }
 
 export function NewOverModal({
@@ -26,8 +27,10 @@ export function NewOverModal({
   completedOverRuns,
   completedOverWickets,
   onSelect,
+  onAddBowler,
 }: Props) {
   const [selected, setSelected] = useState('');
+  const [newBowlerName, setNewBowlerName] = useState('');
   const bowlingTeam = match.teams.find((t) => t.id === innings.bowlingTeamId);
   const maxOvers = match.rules.maxOversPerBowler;
 
@@ -81,6 +84,25 @@ export function NewOverModal({
       {isOpeningBowler && (
         <p className="text-muted text-sm text-center mb-4">Who will bowl the first over?</p>
       )}
+
+
+      <div className="mb-3 rounded-xl border border-pitch-light bg-pitch-dark p-3">
+        <p className="text-xs text-muted mb-2">New player joined? Add bowler</p>
+        <div className="flex gap-2">
+          <input
+            value={newBowlerName}
+            onChange={(e) => setNewBowlerName(e.target.value)}
+            placeholder="New bowler name"
+            className="flex-1 bg-pitch border border-pitch-light rounded-lg px-3 py-2 text-sm text-white"
+          />
+          <button
+            onClick={async () => { if (!newBowlerName.trim()) return; await onAddBowler(newBowlerName.trim()); setNewBowlerName(''); }}
+            className="px-3 py-2 rounded-lg bg-gold/20 border border-gold/40 text-gold text-xs font-bold flex items-center gap-1"
+          >
+            <UserPlus size={13} /> Add
+          </button>
+        </div>
+      </div>
 
       {showCapWarning && (
         <div className="flex items-start gap-2 bg-gold/10 border border-gold/30 rounded-xl px-3 py-2.5 mb-3">

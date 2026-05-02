@@ -14,7 +14,7 @@ import { useUIStore } from '@/store/uiStore';
 import { cn } from '@/utils/cn';
 import { computeLeaderboard } from '@/utils/playerStats';
 import type { LeaderboardEntry } from '@/utils/playerStats';
-import type { SavedTeam, SavedPlayer, PlayerRole } from '@/types/player.types';
+import type { SavedTeam, SavedPlayer, PlayerRole, SkillLevel } from '@/types/player.types';
 
 export type PlayerRole_ = PlayerRole;
 
@@ -40,6 +40,13 @@ const ROLE_ACTIVE: Record<PlayerRole, string> = {
 };
 
 const ROLES: PlayerRole[] = ['batsman', 'bowler', 'allrounder', 'wicketkeeper'];
+const SKILLS: SkillLevel[] = ['low', 'medium', 'high'];
+const SKILL_LABELS: Record<SkillLevel, string> = { low: 'L', medium: 'M', high: 'H' };
+const SKILL_COLORS: Record<SkillLevel, string> = {
+  low: 'bg-muted/20 text-muted border border-white/10',
+  medium: 'bg-amber/20 text-amber border border-amber/40',
+  high: 'bg-safe/20 text-safe border border-safe/40',
+};
 
 const TIME_RANGES = [
   { label: 'This Week', days: 7 },
@@ -825,9 +832,11 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerRole, setNewPlayerRole] = useState<PlayerRole | undefined>(undefined);
+  const [newPlayerSkill, setNewPlayerSkill] = useState<SkillLevel>('medium');
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [editPlayerName, setEditPlayerName] = useState('');
   const [editPlayerRole, setEditPlayerRole] = useState<PlayerRole | undefined>(undefined);
+  const [editPlayerSkill, setEditPlayerSkill] = useState<SkillLevel>('medium');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const pendingDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTournamentReset, setShowTournamentReset] = useState(false);
@@ -851,10 +860,11 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
     if (team.players.length >= 50) { addToast('Maximum 50 players per team', 'warning'); return; }
     if (isDupeName(newPlayerName)) { addToast(`${newPlayerName.trim()} is already in this team`, 'warning'); return; }
     try {
-      await addPlayer(team.id, newPlayerName, newPlayerRole);
+      await addPlayer(team.id, newPlayerName, newPlayerRole, newPlayerSkill);
       addToast(`${newPlayerName.trim()} added`, 'success');
       setNewPlayerName('');
       setNewPlayerRole(undefined);
+      setNewPlayerSkill('medium');
       setAddingPlayer(false);
     } catch {
       addToast('Failed to add player', 'error');
@@ -865,7 +875,7 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
     if (!editPlayerName.trim()) return;
     if (isDupeName(editPlayerName, playerId)) { addToast(`${editPlayerName.trim()} is already in this team`, 'warning'); return; }
     try {
-      await updatePlayer(team.id, playerId, { name: editPlayerName.trim(), role: editPlayerRole });
+      await updatePlayer(team.id, playerId, { name: editPlayerName.trim(), role: editPlayerRole, skillLevel: editPlayerSkill });
       setEditingPlayerId(null);
     } catch {
       addToast('Failed to update player', 'error');
@@ -1000,10 +1010,12 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
               isEditing={editingPlayerId === player.id}
               editName={editPlayerName}
               editRole={editPlayerRole}
+              editSkill={editPlayerSkill}
               pendingDelete={pendingDeleteId === player.id}
-              onStartEdit={() => { setEditingPlayerId(player.id); setEditPlayerName(player.name); setEditPlayerRole(player.role); }}
+              onStartEdit={() => { setEditingPlayerId(player.id); setEditPlayerName(player.name); setEditPlayerRole(player.role); setEditPlayerSkill(player.skillLevel ?? 'medium'); }}
               onChangeName={setEditPlayerName}
               onChangeRole={setEditPlayerRole}
+              onChangeSkill={setEditPlayerSkill}
               onSave={() => handleSavePlayer(player.id)}
               onCancel={() => setEditingPlayerId(null)}
               onRemove={() => handleRemovePlayer(player.id)}
@@ -1030,6 +1042,13 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
                     className={cn('px-2.5 py-1 rounded-lg text-xs font-bold transition-colors',
                       newPlayerRole === r ? ROLE_ACTIVE[r] : 'bg-pitch-light text-muted hover:text-white')}>
                     {ROLE_LABELS[r]}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {SKILLS.map((lv) => (
+                  <button key={lv} onClick={() => setNewPlayerSkill(lv)} className={cn('px-2.5 py-1 rounded-lg text-xs font-bold transition-colors', newPlayerSkill === lv ? SKILL_COLORS[lv] : 'bg-pitch-light text-muted hover:text-white')}>
+                    Skill {SKILL_LABELS[lv]}
                   </button>
                 ))}
               </div>
@@ -1121,10 +1140,12 @@ interface PlayerRowProps {
   isEditing: boolean;
   editName: string;
   editRole: PlayerRole | undefined;
+  editSkill: SkillLevel;
   pendingDelete: boolean;
   onStartEdit: () => void;
   onChangeName: (v: string) => void;
   onChangeRole: (r: PlayerRole | undefined) => void;
+  onChangeSkill: (s: SkillLevel) => void;
   onSave: () => void;
   onCancel: () => void;
   onRemove: () => void;
@@ -1133,8 +1154,8 @@ interface PlayerRowProps {
 }
 
 function PlayerRow({
-  player, index, isEditing, editName, editRole, pendingDelete,
-  onStartEdit, onChangeName, onChangeRole, onSave, onCancel, onRemove, canRemove, onViewStats,
+  player, index, isEditing, editName, editRole, editSkill, pendingDelete,
+  onStartEdit, onChangeName, onChangeRole, onChangeSkill, onSave, onCancel, onRemove, canRemove, onViewStats,
 }: PlayerRowProps) {
   if (isEditing) {
     return (
@@ -1156,6 +1177,13 @@ function PlayerRow({
             </button>
           ))}
         </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {SKILLS.map((lv) => (
+            <button key={lv} onClick={() => onChangeSkill(lv)} className={cn('px-2.5 py-1 rounded-lg text-xs font-bold transition-colors', editSkill === lv ? SKILL_COLORS[lv] : 'bg-pitch-light text-muted hover:text-white')}>
+              Skill {SKILL_LABELS[lv]}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" fullWidth onClick={onCancel}>Cancel</Button>
           <Button variant="gold" size="sm" fullWidth disabled={!editName.trim()} onClick={onSave}>Save</Button>
@@ -1171,6 +1199,11 @@ function PlayerRow({
         <PlayerAvatar name={player.name} size="xs" />
         <span className="text-white text-sm truncate">{player.name}</span>
       </button>
+      {player.skillLevel && (
+        <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', SKILL_COLORS[player.skillLevel])}>
+          {SKILL_LABELS[player.skillLevel]}
+        </span>
+      )}
       {player.role && (
         <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', ROLE_COLORS[player.role])}>
           {ROLE_LABELS[player.role]}
