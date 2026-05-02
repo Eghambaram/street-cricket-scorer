@@ -1,4 +1,5 @@
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, UserPlus } from 'lucide-react';
+import { useState } from 'react';
 import { Modal } from '@/components/common/Modal';
 import { cn } from '@/utils/cn';
 import { econColor } from '@/utils/format';
@@ -12,10 +13,12 @@ interface Props {
   innings: Innings;
   stats: InningsStats;
   onConfirm: (bowlerId: string) => void;
+  onAddBowler: (name: string) => Promise<void> | void;
   onClose: () => void;
 }
 
-export function ChangeBowlerModal({ isOpen, match, innings, stats, onConfirm, onClose }: Props) {
+export function ChangeBowlerModal({ isOpen, match, innings, stats, onConfirm, onAddBowler, onClose }: Props) {
+  const [newBowlerName, setNewBowlerName] = useState('');
   const bowlingTeam = match.teams.find((t) => t.id === innings.bowlingTeamId);
   const maxOvers = match.rules.maxOversPerBowler;
 
@@ -45,6 +48,25 @@ export function ChangeBowlerModal({ isOpen, match, innings, stats, onConfirm, on
       <p className="text-muted text-xs text-center mb-3">
         Current over continues — partial over counts for previous bowler
       </p>
+
+
+      <div className="mb-3 rounded-xl border border-pitch-light bg-pitch-dark p-3">
+        <p className="text-xs text-muted mb-2">Add new bowler to this team</p>
+        <div className="flex gap-2">
+          <input
+            value={newBowlerName}
+            onChange={(e) => setNewBowlerName(e.target.value)}
+            placeholder="New bowler name"
+            className="flex-1 bg-pitch border border-pitch-light rounded-lg px-3 py-2 text-sm text-white"
+          />
+          <button
+            onClick={async () => { if (!newBowlerName.trim()) return; await onAddBowler(newBowlerName.trim()); setNewBowlerName(''); }}
+            className="px-3 py-2 rounded-lg bg-gold/20 border border-gold/40 text-gold text-xs font-bold flex items-center gap-1"
+          >
+            <UserPlus size={13} /> Add
+          </button>
+        </div>
+      </div>
 
       {eligible.length === 0 ? (
         <p className="text-muted text-sm text-center py-4">No other bowlers available.</p>

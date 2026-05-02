@@ -17,7 +17,8 @@ const LS_GUESTS    = 'teamgen_guests_v1';
 const LS_GENERATED = 'teamgen_generated_v1';
 const LS_GENTYPE   = 'teamgen_gentype_v1';
 
-interface GenPlayer     { id: string; name: string }
+type SkillLevel = 'low' | 'medium' | 'high';
+interface GenPlayer     { id: string; name: string; skillLevel?: SkillLevel }
 interface GeneratedTeam { name: string; players: GenPlayer[] }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -29,12 +30,17 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+function skillScore(p: GenPlayer): number { return p.skillLevel === 'high' ? 3 : p.skillLevel === 'medium' ? 2 : 1; }
+
 function splitTeams(players: GenPlayer[], n: 2 | 3): GeneratedTeam[] {
-  const teams: GeneratedTeam[] = Array.from({ length: n }, (_, i) => ({
-    name: `Team ${String.fromCharCode(65 + i)}`,
-    players: [],
-  }));
-  shuffle(players).forEach((p, i) => teams[i % n].players.push(p));
+  const teams: GeneratedTeam[] = Array.from({ length: n }, (_, i) => ({ name: `Team ${String.fromCharCode(65 + i)}`, players: [] }));
+  const sorted = shuffle(players).sort((a,b) => skillScore(b)-skillScore(a));
+  sorted.forEach((p, i) => {
+    const round = Math.floor(i / n);
+    const pos = i % n;
+    const idx = round % 2 === 0 ? pos : (n - 1 - pos);
+    teams[idx].players.push(p);
+  });
   return teams;
 }
 
@@ -116,7 +122,7 @@ export default function TeamGenPage() {
   );
 
   const squadPlayers: GenPlayer[] = [
-    ...savedPlayers.filter((p) => squadIds.has(p.id)).map((p) => ({ id: p.id, name: p.name })),
+    ...savedPlayers.filter((p) => squadIds.has(p.id)).map((p) => ({ id: p.id, name: p.name, skillLevel: p.skillLevel })),
     ...guests.filter((g) => squadIds.has(g.id)),
   ];
 
