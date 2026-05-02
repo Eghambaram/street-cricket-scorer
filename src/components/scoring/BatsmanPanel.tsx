@@ -18,7 +18,7 @@ export function BatsmanPanel({ match, innings, stats, onRotateStrike, onChangeBa
   const lastManStands = match.rules.lastManStands;
   const [id0, id1]    = innings.currentBatsmanIds;
   const strikerIdx    = innings.strikerIndex;
-  const bothPresent   = !!(id0 && id0 !== '' && id1 && id1 !== '');
+  const bothPresent   = !!(id0 && id0 !== '' && id1 && id1 !== '' && id0 !== id1);
 
   const strikerPos    = strikerIdx as 0 | 1;
   const nonStrikerPos = (strikerIdx ^ 1) as 0 | 1;
@@ -158,7 +158,7 @@ export function BatsmanPanel({ match, innings, stats, onRotateStrike, onChangeBa
       })()}
 
       {/* Non-striker */}
-      <BatsmanRow id={nonStrikerId} position={nonStrikerPos} isStriker={false} />
+      <BatsmanRow id={nonStrikerId === strikerId ? '' : nonStrikerId} position={nonStrikerPos} isStriker={false} />
     </div>
   );
 }

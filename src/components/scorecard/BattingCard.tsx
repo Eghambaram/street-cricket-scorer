@@ -22,7 +22,7 @@ export function BattingCard({ match, innings, stats, onEditPlayer }: Props) {
   const battingTeam = match.teams.find((t) => t.id === innings.battingTeamId);
   const playerName  = (id: string) => battingTeam?.players.find((p) => p.id === id)?.name ?? id;
 
-  const orderedBatsmen = innings.battingOrder
+  const orderedBatsmen = Array.from(new Set(innings.battingOrder))
     .map((id) => stats.batsmanScores[id])
     .filter(Boolean);
 
