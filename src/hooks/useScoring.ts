@@ -33,15 +33,20 @@ export function useScoring() {
   };
 
   const selectNextBatsman = (inningsState: Innings, nextBatsmanId: string): Innings => {
-    // Put next batsman at the vacant slot
+    // Put next batsman at the vacant slot. The incoming player may be brand new,
+    // a tap-and-changed batsman who is already in battingOrder, or a retired-hurt
+    // batsman being recalled.
     const [a, b] = inningsState.currentBatsmanIds;
-    let updated: Innings;
+    const battingOrder = inningsState.battingOrder.includes(nextBatsmanId)
+      ? inningsState.battingOrder
+      : [...inningsState.battingOrder, nextBatsmanId];
+    const retiredHurtIds = (inningsState.retiredHurtIds ?? []).filter((id) => id !== nextBatsmanId);
+
     if (!a || a === '') {
-      updated = { ...inningsState, currentBatsmanIds: [nextBatsmanId, b], battingOrder: [...inningsState.battingOrder, nextBatsmanId] };
-    } else {
-      updated = { ...inningsState, currentBatsmanIds: [a, nextBatsmanId], battingOrder: [...inningsState.battingOrder, nextBatsmanId] };
+      return { ...inningsState, currentBatsmanIds: [nextBatsmanId, b], battingOrder, retiredHurtIds };
     }
-    return updated;
+
+    return { ...inningsState, currentBatsmanIds: [a, nextBatsmanId], battingOrder, retiredHurtIds };
   };
 
   return {

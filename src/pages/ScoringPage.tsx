@@ -577,6 +577,7 @@ export default function ScoringPage() {
         isOpen={showWicket}
         match={match}
         innings={innings}
+        stats={stats}
         isFreeHit={!!(innings.freeHitPending)}
         onConfirm={handleWicketConfirm}
         onRetireHurt={handleRetireHurt}

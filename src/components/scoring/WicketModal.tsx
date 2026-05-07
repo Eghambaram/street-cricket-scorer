@@ -4,12 +4,13 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { cn } from '@/utils/cn';
 import type { Innings, Match } from '@/types/match.types';
-import type { WicketType, Wicket, DeliveryExtras } from '@/types/delivery.types';
+import type { WicketType, Wicket, DeliveryExtras, InningsStats } from '@/types/delivery.types';
 
 interface Props {
   isOpen: boolean;
   match: Match;
   innings: Innings;
+  stats: InningsStats;
   isFreeHit?: boolean;
   onConfirm: (wicket: Wicket, nextBatsmanId: string | null, runs: number, extras: DeliveryExtras) => void;
   onRetireHurt: (batsmanId: string, nextBatsmanId: string | null) => void;
@@ -115,7 +116,7 @@ function SummaryChip({ parts }: { parts: string[] }) {
 // On a free hit, only run out is valid
 const FREE_HIT_ALLOWED: WicketType[] = ['run_out'];
 
-export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfirm, onRetireHurt, onCancel }: Props) {
+export function WicketModal({ isOpen, match, innings, stats, isFreeHit = false, onConfirm, onRetireHurt, onCancel }: Props) {
   const [mode, setMode] = useState<Mode>('dismissal');
   const [step, setStep] = useState<Step>('how_out');
   const [selectedType, setSelectedType] = useState<WicketType | ''>('');
@@ -141,11 +142,23 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
   const bowlingTeam = match.teams.find((t) => t.id === innings.bowlingTeamId);
   const battingTeam = match.teams.find((t) => t.id === innings.battingTeamId);
 
-  const usedPlayerIds = new Set([
-    ...innings.battingOrder,
-    ...(innings.retiredHurtIds ?? []),
-  ]);
-  const remainingBatsmen = battingTeam?.players.filter((p) => !usedPlayerIds.has(p.id)) ?? [];
+  const retiredHurtIds = new Set(innings.retiredHurtIds ?? []);
+  const dismissedIds = new Set(
+    Object.entries(stats.batsmanScores)
+      .filter(([, sc]) => sc.isOut)
+      .map(([id]) => id),
+  );
+  const atCreaseIds = new Set(innings.currentBatsmanIds.filter(Boolean) as string[]);
+
+  // Any not-out batsman who is not currently at the crease can come in next.
+  // This includes players who were swapped out with tap-and-change, plus retired
+  // hurt players who are eligible to be recalled after a wicket.
+  const availableNextBatsmen = (battingTeam?.players ?? []).filter(
+    (p) => !atCreaseIds.has(p.id) && !dismissedIds.has(p.id),
+  );
+  const freshNextBatsmen = availableNextBatsmen.filter((p) => !retiredHurtIds.has(p.id));
+  const recallableNextBatsmen = availableNextBatsmen.filter((p) => retiredHurtIds.has(p.id));
+  const remainingBatsmen = freshNextBatsmen;
 
   const selectedInfo = filteredTypes.find((d) => d.type === selectedType);
   const strikerId      = innings.currentBatsmanIds[innings.strikerIndex] ?? '';
@@ -162,8 +175,8 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
 
   // Steps for this dismissal type
   const needsFielder = !isSingle && !!(selectedInfo?.needsFielder);
-  const canContinueWithLoneBatsman = match.rules.lastManStands && !isLastMan && remainingBatsmen.length === 0;
-  const needsNextBatsman = !isLastMan && !canContinueWithLoneBatsman && remainingBatsmen.length > 0;
+  const canContinueWithLoneBatsman = match.rules.lastManStands && !isLastMan && availableNextBatsmen.length === 0;
+  const needsNextBatsman = !isLastMan && !canContinueWithLoneBatsman && availableNextBatsmen.length > 0;
   const steps: Step[] = ['how_out'];
   if (selectedType && needsFielder) steps.push('fielder');
   if (selectedType) steps.push('next_batsman');
@@ -435,10 +448,25 @@ export function WicketModal({ isOpen, match, innings, isFreeHit = false, onConfi
                     <UserRound size={12} className="text-muted" /> Next Batsman In
                   </p>
                   <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
-                    {remainingBatsmen.map((p) => (
+                    {freshNextBatsmen.map((p) => (
                       <PickButton
                         key={p.id}
                         name={p.name}
+                        selected={nextBatsmanId === p.id}
+                        onClick={() => setNextBatsmanId(p.id)}
+                        accent="gold"
+                      />
+                    ))}
+                    {recallableNextBatsmen.length > 0 && freshNextBatsmen.length > 0 && (
+                      <p className="pt-2 text-xs font-semibold text-muted uppercase tracking-wide">
+                        Recall Retired Hurt
+                      </p>
+                    )}
+                    {recallableNextBatsmen.map((p) => (
+                      <PickButton
+                        key={p.id}
+                        name={p.name}
+                        sub="retired hurt"
                         selected={nextBatsmanId === p.id}
                         onClick={() => setNextBatsmanId(p.id)}
                         accent="gold"
