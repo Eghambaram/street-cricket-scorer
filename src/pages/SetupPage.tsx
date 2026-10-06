@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { v4 as uuid } from 'uuid';
@@ -13,7 +13,7 @@ import { useUIStore } from '@/store/uiStore';
 import { autoMatchName } from '@/utils/format';
 import { DEFAULT_RULES, type FreeHitMode } from '@/types/rules.types';
 import { DEFAULT_CONFIG } from '@/types/match.types';
-import type { Match, Innings, Team } from '@/types/match.types';
+import type { Match, Innings, Team, MatchConfig } from '@/types/match.types';
 import type { StreetCricketRules } from '@/types/rules.types';
 import { saveInnings } from '@/db/repos/inningsRepo';
 import { saveSavedTeam, getAllSavedTeams } from '@/db/repos/savedTeamRepo';
@@ -30,6 +30,10 @@ export interface NewMatchForm {
     { id: string; name: string; players: { id: string; name: string; teamId: string }[] }
   ];
   toss: { winnerTeamId: string; choice: 'bat' | 'bowl' };
+}
+
+function blankPlayers(teamId: string, count: number) {
+  return Array.from({ length: count }, () => ({ id: uuid(), name: '', teamId }));
 }
 
 // Steps: Config → Teams → Toss → Review (rules folded into review)
@@ -208,7 +212,11 @@ function RulesAccordion() {
 export default function SetupPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const rematchTeams = (location.state as { rematch?: { teams: [Team, Team] } } | null)?.rematch?.teams;
+  const rematch = (location.state as { rematch?: { teams: [Team, Team]; config?: MatchConfig } } | null)?.rematch;
+  const rematchTeams = rematch?.teams;
+  // Original match format (overs, players/side, ball type). Absent when coming
+  // from the Team Generator, which has no previous match.
+  const rematchConfig = rematch?.config;
   const { upsertMatch } = useMatch();
   const { addToast } = useUIStore();
   const [step, setStep] = useState(0);
@@ -219,16 +227,23 @@ export default function SetupPage() {
   const teamAId = useRef(uuid()).current;
   const teamBId = useRef(uuid()).current;
 
-  // Derive the player count from the rematch data so config stays consistent
-  const rematchPlayerCount = rematchTeams
-    ? Math.max(rematchTeams[0].players.length, rematchTeams[1].players.length)
-    : DEFAULT_CONFIG.playersPerSide;
+  // Players/side: use the original match's setting when we have it. Roster
+  // length alone over-counts when a bowler was added to a team mid-match.
+  const rematchPlayerCount = rematchConfig?.playersPerSide
+    ?? (rematchTeams
+      ? Math.max(rematchTeams[0].players.length, rematchTeams[1].players.length)
+      : DEFAULT_CONFIG.playersPerSide);
+
+  // teamSizes is keyed by the old match's team ids; it is recomputed on Start.
+  const { teamSizes: _oldTeamSizes, ...rematchFormat } = rematchConfig ?? {};
 
   const methods = useForm<NewMatchForm>({
     defaultValues: {
       name: '',
       config: {
         ...DEFAULT_CONFIG,
+        // Same format as the original match (overs, ball type, …)
+        ...rematchFormat,
         // Match the original squad size so the scoring engine sees the right total
         playersPerSide: rematchTeams ? rematchPlayerCount : DEFAULT_CONFIG.playersPerSide,
       },
@@ -240,8 +255,9 @@ export default function SetupPage() {
             { id: teamBId, name: rematchTeams[1].name, players: rematchTeams[1].players.map((p) => ({ id: p.id, name: p.name, teamId: teamBId })) },
           ]
         : [
-            { id: teamAId, name: 'Team A', players: [{ id: uuid(), name: '', teamId: teamAId }, { id: uuid(), name: '', teamId: teamAId }] },
-            { id: teamBId, name: 'Team B', players: [{ id: uuid(), name: '', teamId: teamBId }, { id: uuid(), name: '', teamId: teamBId }] },
+            // Each team gets its own freshly built array — never share references
+            { id: teamAId, name: 'Team A', players: blankPlayers(teamAId, DEFAULT_CONFIG.playersPerSide) },
+            { id: teamBId, name: 'Team B', players: blankPlayers(teamBId, DEFAULT_CONFIG.playersPerSide) },
           ],
       toss: { winnerTeamId: '', choice: '' as 'bat' | 'bowl' },
     },
@@ -250,6 +266,24 @@ export default function SetupPage() {
   const { watch } = methods;
   const formValues = watch();
   const isSinglePlayer = watch('config.isSinglePlayerMode');
+  const playersPerSide = watch('config.playersPerSide');
+
+  // When the player count changes, resize each team's roster to N input boxes.
+  // Only blank trailing boxes are dropped, so typed names and extra players the
+  // user added for uneven teams (7 vs 6) are never lost. Skipped on first render
+  // so rematch rosters stay exactly as they were.
+  const prevPlayersPerSide = useRef(playersPerSide);
+  useEffect(() => {
+    if (prevPlayersPerSide.current === playersPerSide) return;
+    prevPlayersPerSide.current = playersPerSide;
+    ([0, 1] as const).forEach((i) => {
+      const teamId = i === 0 ? teamAId : teamBId;
+      const resized = methods.getValues(`teams.${i}.players`).map((p) => ({ ...p }));
+      while (resized.length > playersPerSide && !resized[resized.length - 1].name?.trim()) resized.pop();
+      if (resized.length < playersPerSide) resized.push(...blankPlayers(teamId, playersPerSide - resized.length));
+      methods.setValue(`teams.${i}.players`, resized);
+    });
+  }, [playersPerSide, methods, teamAId, teamBId]);
 
   const next = () => setStep((s) => {
     const n = Math.min(s + 1, STEPS.length - 1);
@@ -270,7 +304,12 @@ export default function SetupPage() {
 
       const teams = values.teams.map((t, i) => {
         const teamId = i === 0 ? teamAId : teamBId;
-        const resolvedPlayers = Array.from({ length: playersPerSide }, (_, pi) => {
+        // Single-player mode has no roster step: use the configured count.
+        // Otherwise each team keeps its own roster size, so 7 vs 6 is allowed.
+        const squadSize = values.config.isSinglePlayerMode
+          ? playersPerSide
+          : Math.max(2, t.players.length);
+        const resolvedPlayers = Array.from({ length: squadSize }, (_, pi) => {
           const existing = t.players[pi];
           return {
             id: existing?.id || uuid(),
@@ -318,7 +357,11 @@ export default function SetupPage() {
         name: values.name?.trim() || autoMatchName(),
         createdAt: Date.now(),
         status: 'innings_1',
-        config: { ...values.config },
+        config: {
+          ...values.config,
+          playersPerSide: Math.max(teams[0].players.length, teams[1].players.length),
+          teamSizes: { [teams[0].id]: teams[0].players.length, [teams[1].id]: teams[1].players.length },
+        },
         rules: { ...values.rules },
         toss: { winnerTeamId: tossWinner, choice },
         teams,

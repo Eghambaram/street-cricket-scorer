@@ -79,21 +79,24 @@ export function BallButtons({ onRun, onWicket, onWide, onNoBall, onBye, onLegBye
       )}
 
       {/* ── Runs grid ─────────────────────────────────────────────────────── */}
-      {/* Row 1: 0 + 1 + 2 */}
-      <div className="grid grid-cols-4 gap-2">
-        {/* 0 — dot: spans 2 cols, most-pressed button */}
+      {/* Row 1: 0 + 1 + 2 — same 3-column rhythm as the 3 / 4 / 6 row below */}
+      <div className="grid grid-cols-3 gap-2">
+        {/* 0 — dot ball: a large solid dot so it reads instantly and doesn't look disabled */}
         <button
           onClick={() => { haptic(); if (!disabled) onRun(0); }}
           className={cn(
             baseBtn,
-            'col-span-2 min-h-[56px]',
-            'bg-pitch-light text-muted/60 border border-white/[0.10]',
-            'font-display text-3xl',
-            'shadow-[inset_0_1px_0_0_rgb(255_255_255/0.07)]',
+            'flex-col gap-1',
+            'bg-white/[0.06] text-white border border-white/20',
+            'shadow-[inset_0_1px_0_0_rgb(255_255_255/0.08)]',
           )}
-          aria-label="0 runs"
+          aria-label="0 runs — dot ball"
         >
-          ·
+          <span
+            className="block w-4 h-4 rounded-full bg-current shadow-[0_0_10px_0_rgb(var(--color-fg)/0.35)]"
+            aria-hidden="true"
+          />
+          <span className="font-sans text-[9px] font-semibold text-white/50 uppercase tracking-wider leading-none">dot</span>
         </button>
 
         {/* 1 */}

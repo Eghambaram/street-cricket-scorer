@@ -152,6 +152,8 @@ Zustand provides a flat, simple store without prop-drilling. Context is used onl
 - **Runtime cache**: Images with Cache-First, API calls with NetworkFirst (Phase 2).
 - **Background sync**: Queue scoring actions when offline, replay when online (Phase 2).
 - Service worker update flow: banner asks user to reload when new version available.
+- Updates activate via `updateSW(true)` (not `location.reload()`, which keeps the old worker). The app re-checks for a new build hourly and on returning to foreground.
+- Version shown in the Home header: `package.json` version + short git commit, injected at build time (`__APP_VERSION__`, `__APP_BUILD_ID__`). Bump `version` for each release.
 
 ---
 
@@ -176,6 +178,7 @@ interface MatchConfig {
   overs: number;                 // 2-50, default 5 for street
   ballsPerOver: number;          // always 6
   playersPerSide: number;        // 2-11, default 6
+  teamSizes?: Record<string, number>; // per-team squad size (uneven teams e.g. 7 vs 6); falls back to playersPerSide
 }
 
 interface StreetCricketRules {

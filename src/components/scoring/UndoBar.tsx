@@ -7,16 +7,19 @@ interface Props {
   lastDelivery: Delivery | null;
   onUndo: () => void;
   disabled?: boolean;
+  /** Shown when this innings has no balls but undo can still step back (into the 1st innings). */
+  fallbackLabel?: string;
 }
 
-export function UndoBar({ lastDelivery, onUndo, disabled }: Props) {
-  if (!lastDelivery) return null;
+export function UndoBar({ lastDelivery, onUndo, disabled, fallbackLabel }: Props) {
+  if (!lastDelivery && !fallbackLabel) return null;
 
-  const symbol = ballSymbol(lastDelivery);
-  const isWicket = !!lastDelivery.wicket;
-  const label = isWicket
-    ? `Undo OUT — ${lastDelivery.wicket!.type.replace(/_/g, ' ')}`
-    : `Undo last: ${symbol}`;
+  const isWicket = !!lastDelivery?.wicket;
+  const label = !lastDelivery
+    ? fallbackLabel
+    : isWicket
+      ? `Undo OUT — ${lastDelivery.wicket!.type.replace(/_/g, ' ')}`
+      : `Undo last: ${ballSymbol(lastDelivery)}`;
 
   return (
     <div className="px-3 pt-1.5 pb-0.5">

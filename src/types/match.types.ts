@@ -23,6 +23,8 @@ export interface MatchConfig {
   overs: number;           // 1–50
   ballsPerOver: number;    // always 6
   playersPerSide: number;  // 2–11
+  /** Actual squad size per team id, when teams are uneven (e.g. 7 vs 6). Falls back to playersPerSide. */
+  teamSizes?: Record<string, number>;
   ballType: 'tennis' | 'tape' | 'rubber' | 'leather';
   isSinglePlayerMode: boolean;
 }

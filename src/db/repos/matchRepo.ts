@@ -23,9 +23,28 @@ export async function deleteMatch(id: string): Promise<void> {
   });
 }
 
-export async function getActiveMatch(): Promise<Match | undefined> {
-  return db.matches
+/** Last time anything happened in a match: its latest delivery, or creation time if no balls yet. */
+export async function getMatchLastActivity(match: Match): Promise<number> {
+  if (match.inningsIds.length === 0) return match.createdAt;
+  const deliveries = await db.deliveries.where('inningsId').anyOf(match.inningsIds).toArray();
+  return deliveries.reduce((latest, d) => Math.max(latest, d.timestamp), match.createdAt);
+}
+
+/**
+ * The unfinished match the user most recently played, with its last activity time.
+ * Several matches can be unfinished (app closed mid-match, then a new match
+ * started), so pick by recency — `.first()` on the status index returns them
+ * in random uuid order and could surface a days-old match.
+ */
+export async function getActiveMatch(): Promise<{ match: Match; lastActivity: number } | undefined> {
+  const unfinished = await db.matches
     .where('status')
     .anyOf(['toss', 'innings_1', 'innings_break', 'innings_2'])
-    .first();
+    .toArray();
+  if (unfinished.length === 0) return undefined;
+
+  const withActivity = await Promise.all(
+    unfinished.map(async (match) => ({ match, lastActivity: await getMatchLastActivity(match) })),
+  );
+  return withActivity.reduce((a, b) => (b.lastActivity > a.lastActivity ? b : a));
 }

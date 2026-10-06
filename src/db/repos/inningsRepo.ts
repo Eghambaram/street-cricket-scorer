@@ -16,3 +16,11 @@ export async function saveInnings(innings: Innings): Promise<void> {
 export async function getAllInnings(): Promise<Innings[]> {
   return db.innings.toArray();
 }
+
+/** Deletes an innings and any deliveries recorded against it. */
+export async function deleteInnings(id: string): Promise<void> {
+  await db.transaction('rw', db.innings, db.deliveries, async () => {
+    await db.deliveries.where('inningsId').equals(id).delete();
+    await db.innings.delete(id);
+  });
+}

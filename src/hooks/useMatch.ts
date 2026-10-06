@@ -3,7 +3,7 @@ import { getMatch } from '@/db/repos/matchRepo';
 import type { Match } from '@/types/match.types';
 
 export function useMatch() {
-  const { matches, activeMatch, loading, loadMatches, loadActiveMatch, upsertMatch, removeMatch, setActiveMatch } =
+  const { matches, activeMatch, activeMatchLastActivity, loading, loadMatches, loadActiveMatch, upsertMatch, removeMatch, setActiveMatch } =
     useMatchStore();
 
   const refreshMatch = async (id: string) => {
@@ -21,6 +21,7 @@ export function useMatch() {
   return {
     matches,
     activeMatch,
+    activeMatchLastActivity,
     loading,
     loadMatches,
     loadActiveMatch,
