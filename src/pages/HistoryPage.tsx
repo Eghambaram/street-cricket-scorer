@@ -7,6 +7,7 @@ import { Button } from '@/components/common/Button';
 import { useMatch } from '@/hooks/useMatch';
 import { useUIStore } from '@/store/uiStore';
 import { formatDate } from '@/utils/format';
+import { getTeamSize } from '@/utils/cricket';
 import { db } from '@/db/database';
 import { saveMatch } from '@/db/repos/matchRepo';
 import { saveInnings } from '@/db/repos/inningsRepo';
@@ -191,7 +192,7 @@ function MatchCard({
                 <span className="mx-1 opacity-50">·</span>
                 {m.config.overs} overs
                 <span className="mx-1 opacity-50">·</span>
-                {m.config.playersPerSide}v{m.config.playersPerSide}
+                {getTeamSize(m, m.teams[0].id)}v{getTeamSize(m, m.teams[1].id)}
               </p>
             </div>
 

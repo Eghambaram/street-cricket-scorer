@@ -25,10 +25,12 @@ export function useScoring() {
 
   const undo = async () => {
     try {
-      await store.undoLastDelivery();
-      addToast('Last delivery undone', 'info');
+      const result = await store.undoLastDelivery();
+      addToast(result === 'reopened_innings' ? 'Innings reopened' : 'Last delivery undone', 'info');
+      return result;
     } catch {
       addToast('Nothing to undo', 'warning');
+      return null;
     }
   };
 

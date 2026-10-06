@@ -16,7 +16,7 @@ interface Props {
 // ── Per-team form panel ──────────────────────────────────────────────────────
 
 function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: string[] }) {
-  const { register, control, watch, setValue } = useFormContext<NewMatchForm>();
+  const { register, control, watch, setValue, getValues } = useFormContext<NewMatchForm>();
   const fieldPath = `teams.${teamIndex}.players` as const;
   const { fields, append, remove, replace } = useFieldArray({ control, name: fieldPath });
   const isSingle = watch('config.isSinglePlayerMode');
@@ -56,9 +56,14 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
 
   const applySelectedTeam = () => {
     if (!selectedSavedTeam) return;
+    // Saved player ids are kept for career stats, but if the same saved player is
+    // already in the other team, give this copy its own id so the teams never share players.
+    const otherTeamIds = new Set(
+      (getValues(`teams.${teamIndex === 0 ? 1 : 0}.players`) ?? []).map((p) => p.id),
+    );
     const selected = selectedSavedTeam.players
       .filter((p) => selectedPlayerIds.has(p.id))
-      .map((p) => ({ id: p.id, name: p.name, teamId }));
+      .map((p) => ({ id: otherTeamIds.has(p.id) ? crypto.randomUUID() : p.id, name: p.name, teamId }));
     setValue(`teams.${teamIndex}.name`, selectedSavedTeam.name);
     replace(selected);
     // Drop back to the field view so user can see the result
@@ -74,7 +79,7 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
     const emptyIdx = currentNames.findIndex((n) => !n?.trim());
     if (emptyIdx >= 0) {
       setValue(`teams.${teamIndex}.players.${emptyIdx}.name`, name);
-    } else if (fields.length < playersPerSide) {
+    } else {
       append({ id: crypto.randomUUID(), name, teamId });
     }
   };
@@ -236,12 +241,23 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
           {/* Player inputs */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold text-muted">Players ({fields.length}/{playersPerSide})</p>
-              {fields.length < playersPerSide && (
-                <button type="button" onClick={() => append({ id: crypto.randomUUID(), name: '', teamId })} className="flex items-center gap-1 text-gold text-xs font-semibold">
-                  <Plus size={14} /> Add
-                </button>
-              )}
+              <p className="text-xs font-semibold text-muted">
+                Players ({fields.length})
+                {fields.length !== playersPerSide && (
+                  <span className="text-gold/80 font-normal ml-1">· {playersPerSide} per side set</span>
+                )}
+              </p>
+              {/* Always enabled so teams can be uneven (e.g. 7 vs 6) */}
+              <button
+                type="button"
+                onClick={() => {
+                  append({ id: crypto.randomUUID(), name: '', teamId });
+                  setTimeout(() => inputRefs.current[fields.length]?.focus(), 50);
+                }}
+                className="flex items-center gap-1 text-gold text-xs font-semibold"
+              >
+                <Plus size={14} /> Add Player
+              </button>
             </div>
             {fields.map((field, i) => {
               const { ref: rhfRef, ...rest } = register(`teams.${teamIndex}.players.${i}.name`);
@@ -257,7 +273,7 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
                         e.preventDefault();
                         if (i < fields.length - 1) {
                           inputRefs.current[i + 1]?.focus();
-                        } else if (fields.length < playersPerSide) {
+                        } else {
                           append({ id: crypto.randomUUID(), name: '', teamId });
                           setTimeout(() => inputRefs.current[fields.length]?.focus(), 50);
                         }
@@ -336,7 +352,10 @@ export function TeamsStep({ onNext, onBack }: Props) {
       </div>
 
       {/* Active team form */}
-      <TeamForm teamIndex={activeTab} recentNames={recentNames} />
+      {/* key forces a fresh TeamForm per team. Without it React reuses Team A's
+          instance for Team B: useFieldArray keeps A's fields and the uncontrolled
+          inputs keep A's values, which then get registered under Team B. */}
+      <TeamForm key={activeTab} teamIndex={activeTab} recentNames={recentNames} />
 
       {/* Validation hint */}
       {activeTab === 1 && !canProceed && !watch('config.isSinglePlayerMode') && (

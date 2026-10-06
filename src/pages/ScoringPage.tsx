@@ -30,7 +30,7 @@ import { getMatchInnings, saveInnings } from '@/db/repos/inningsRepo';
 import { getInningsDeliveries } from '@/db/repos/playerRepo';
 import type { Innings, Match } from '@/types/match.types';
 import type { DeliveryExtras, Wicket } from '@/types/delivery.types';
-import { computeInningsStats, buildResultText } from '@/utils/cricket';
+import { computeInningsStats, buildResultText, getMaxWickets, getTeamSize } from '@/utils/cricket';
 import { formatScore } from '@/utils/format';
 import { canContinueWithLoneBatter, getRemainingBatsmenCount } from '@/utils/inningsFlow';
 import { v4 as uuid } from 'uuid';
@@ -142,6 +142,19 @@ export default function ScoringPage() {
     await undo();
   };
 
+  // Undo from the innings break: reopen the 1st innings. After a page reload the
+  // break screen has nothing in the scoring store yet, so load the 1st innings first.
+  const handleUndoFromInningsBreak = async () => {
+    if (!useScoringStore.getState().innings && pendingInningsBreak) {
+      await loadInnings(pendingInningsBreak.match, pendingInningsBreak.completedInnings);
+    }
+    await undo();
+    if (useScoringStore.getState().innings?.status === 'active') {
+      setShowInningsBreak(false);
+      setPendingInningsBreak(null);
+    }
+  };
+
   const handleExtrasConfirm = async (extras: DeliveryExtras, batsmanRuns: number) => {
     setExtrasType(null);
     const result = await score({ runs: batsmanRuns, extras });
@@ -206,7 +219,7 @@ export default function ScoringPage() {
     }
 
     if (result.isInningsOver) {
-      await finaliseInnings(result.newStats.wickets >= (match.rules.lastManStands ? match.config.playersPerSide : match.config.playersPerSide - 1) ? 'all_out' : 'overs_complete');
+      await finaliseInnings(result.newStats.wickets >= getMaxWickets(match, innings.battingTeamId) ? 'all_out' : 'overs_complete');
 
       if (innings.inningsNumber === 1) {
         setInn1Stats(result.newStats);
@@ -274,6 +287,8 @@ export default function ScoringPage() {
   };
 
   const handleRetireHurt = async (batsmanId: string, nextBatsmanId: string | null) => {
+    // Close the sheet first, same as handleWicketConfirm
+    setShowWicket(false);
     await retireHurt(batsmanId, nextBatsmanId);
   };
 
@@ -371,7 +386,7 @@ export default function ScoringPage() {
 
     if (inn2Runs > inn1Runs) {
       winnerId = inn2?.battingTeamId ?? null;
-      margin = match.config.playersPerSide - inn2Stats.wickets;
+      margin = (inn2 ? getTeamSize(match, inn2.battingTeamId) : match.config.playersPerSide) - inn2Stats.wickets;
       marginType = 'wickets';
       resultText = buildResultText(chasingTeamName, margin, 'wickets');
     } else if (inn2Runs < inn1Runs) {
@@ -410,6 +425,7 @@ export default function ScoringPage() {
             completedInnings={pendingInningsBreak.completedInnings}
             inn1Stats={inn1Stats}
             onStart={handleInningsBreakStart}
+            onUndo={handleUndoFromInningsBreak}
           />
         </div>
       );
@@ -529,7 +545,11 @@ export default function ScoringPage() {
 
       {/* Sticky bottom: undo + ball buttons + pending prompts */}
       <div className="shrink-0 bg-pitch border-t border-white/[0.06]">
-        <UndoBar lastDelivery={lastDelivery} onUndo={handleUndo} />
+        <UndoBar
+          lastDelivery={lastDelivery}
+          onUndo={handleUndo}
+          fallbackLabel={innings.inningsNumber === 2 && deliveries.length === 0 ? 'Undo — back to 1st innings' : undefined}
+        />
 
         {needsBowlerSelection && (
           <div className="px-4 pb-4 pt-1 space-y-1">
@@ -611,6 +631,7 @@ export default function ScoringPage() {
           completedInnings={innings}
           inn1Stats={inn1Stats}
           onStart={handleInningsBreakStart}
+          onUndo={handleUndoFromInningsBreak}
         />
       )}
 

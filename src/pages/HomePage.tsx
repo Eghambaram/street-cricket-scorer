@@ -8,7 +8,7 @@ import type { Match } from '@/types/match.types';
 import { buildShareText, shareScorecard } from '@/utils/share';
 import { getMatchInnings } from '@/db/repos/inningsRepo';
 import { getInningsDeliveries } from '@/db/repos/playerRepo';
-import { computeInningsStats } from '@/utils/cricket';
+import { computeInningsStats, getMaxWickets } from '@/utils/cricket';
 import { useUIStore } from '@/store/uiStore';
 import { useTheme } from '@/hooks/useTheme';
 import { cn } from '@/utils/cn';
@@ -21,15 +21,13 @@ type LiveScore = MatchScore & { inningsNumber: number };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function isAllOut(wickets: number, match: Match): boolean {
-  return match.rules.lastManStands
-    ? wickets >= match.config.playersPerSide
-    : wickets >= match.config.playersPerSide - 1;
+function isAllOut(wickets: number, match: Match, battingTeamId: string): boolean {
+  return wickets >= getMaxWickets(match, battingTeamId);
 }
 
 function scoreLabel(s: MatchScore, match: Match): string {
   if (s.legalBalls === 0) return '—';
-  return isAllOut(s.wickets, match) ? `${s.runs}` : `${s.runs}/${s.wickets}`;
+  return isAllOut(s.wickets, match, s.teamId) ? `${s.runs}` : `${s.runs}/${s.wickets}`;
 }
 
 function oversLabel(legalBalls: number): string {
@@ -52,6 +50,12 @@ function AppHeader() {
         <span className="font-display text-2xl leading-none tracking-widest shimmer-gold">CRICSCORE</span>
         <span className="text-muted text-[10px] font-bold uppercase tracking-wider leading-none hidden xs:inline">Street Cricket Scorer</span>
       </div>
+      <span
+        className="shrink-0 text-muted/70 text-[10px] font-mono leading-none"
+        title={`Built ${new Date(__APP_BUILD_TIME__).toLocaleString()}`}
+      >
+        v{__APP_VERSION__} · {__APP_BUILD_ID__}
+      </span>
       <button
         onClick={toggle}
         className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl text-muted hover:text-gold hover:bg-pitch-light/60 transition-all"
@@ -129,15 +133,22 @@ function WelcomeScreen({ onStart }: { onStart: () => void }) {
 
 // ─── LiveMatchBanner ──────────────────────────────────────────────────────────
 
+const STALE_MATCH_MS = 6 * 60 * 60 * 1000; // 6 hours without a ball
+
 function LiveMatchBanner({
   match,
   liveScore,
+  lastActivity,
   onResume,
 }: {
   match: Match;
   liveScore: LiveScore | null;
+  lastActivity: number | null;
   onResume: () => void;
 }) {
+  // A match untouched for hours (app closed mid-game) is still resumable, but
+  // it shouldn't pulse as "Live" — label it as paused and show when it was played.
+  const isStale = lastActivity !== null && Date.now() - lastActivity > STALE_MATCH_MS;
   const battingTeam = liveScore ? match.teams.find((t) => t.id === liveScore.teamId) : null;
   const bowlingTeam = liveScore ? match.teams.find((t) => t.id !== liveScore.teamId) : null;
   const inningsLabel = match.status === 'innings_1' ? '1st Innings' : match.status === 'innings_2' ? '2nd Innings' : '';
@@ -165,14 +176,21 @@ function LiveMatchBanner({
       <div className="relative p-5">
         {/* Live indicator row */}
         <div className="flex items-center gap-2 mb-4">
-          {/* Pulsing live dot — green (safe token = online/live convention) */}
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-safe opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-safe" />
-          </span>
+          {isStale ? (
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-gold" />
+          ) : (
+            /* Pulsing live dot — green (safe token = online/live convention) */
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-safe opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-safe" />
+            </span>
+          )}
           <span className="text-white text-[11px] font-black uppercase tracking-widest">
-            Live Match
+            {isStale ? 'Paused Match' : 'Live Match'}
           </span>
+          {isStale && lastActivity !== null && (
+            <span className="text-muted text-[10px] font-semibold">· {formatDate(lastActivity)}</span>
+          )}
           {inningsLabel && (
             <span className="ml-auto bg-pitch-dark/60 text-muted rounded-full px-2.5 py-0.5 text-xs">
               {inningsLabel}
@@ -188,7 +206,7 @@ function LiveMatchBanner({
             </p>
             <div className="flex items-end gap-3">
               <span className="font-display text-5xl text-white leading-none">
-                {isAllOut(liveScore.wickets, match) ? liveScore.runs : `${liveScore.runs}/${liveScore.wickets}`}
+                {isAllOut(liveScore.wickets, match, liveScore.teamId) ? liveScore.runs : `${liveScore.runs}/${liveScore.wickets}`}
               </span>
               <span className="text-muted text-sm font-mono mb-1">
                 {oversLabel(liveScore.legalBalls)}
@@ -438,22 +456,31 @@ function HomeSkeleton() {
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { matches, activeMatch, loading, loadMatches, loadActiveMatch } = useMatch();
+  const { matches, activeMatch, activeMatchLastActivity, loading, loadMatches, loadActiveMatch } = useMatch();
   const { addToast } = useUIStore();
 
   const [liveScore, setLiveScore] = useState<LiveScore | null>(null);
   const [matchScores, setMatchScores] = useState<Record<string, LoadedMatchData>>({});
+  // True once BOTH the match list and the active match are freshly read from the DB.
+  // Until then the store may still hold an in-memory match from a previous screen.
+  const [ready, setReady] = useState(false);
 
   // Phase 1 — load match store
   useEffect(() => {
-    loadMatches();
-    loadActiveMatch();
+    let cancelled = false;
+    void Promise.all([loadMatches(), loadActiveMatch()]).finally(() => {
+      if (!cancelled) setReady(true);
+    });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Phase 2 — load score data once matches are ready
   useEffect(() => {
-    if (loading) return;
+    if (!ready || loading) return;
+    let cancelled = false;
+    // Never show a previous match's score on the banner while the new one loads
+    setLiveScore(null);
     const completed = matches.filter((m) => m.status === 'completed').slice(0, 4);
 
     const loadAllScores = async () => {
@@ -465,7 +492,7 @@ export default function HomePage() {
           if (live) {
             const dels = await getInningsDeliveries(live.id);
             const stats = computeInningsStats(dels);
-            setLiveScore({
+            if (!cancelled) setLiveScore({
               runs: stats.totalRuns,
               wickets: stats.wickets,
               legalBalls: stats.legalBalls,
@@ -504,12 +531,13 @@ export default function HomePage() {
           }
         }),
       );
-      setMatchScores(Object.fromEntries(entries));
+      if (!cancelled) setMatchScores(Object.fromEntries(entries));
     };
 
     void loadAllScores();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, activeMatch?.id]);
+  }, [ready, loading, activeMatch?.id]);
 
   const recentCompleted = matches.filter((m) => m.status === 'completed').slice(0, 4);
   const lastCompleted = recentCompleted[0] ?? null;
@@ -537,7 +565,7 @@ export default function HomePage() {
   };
 
   const handleRematch = (match: Match) => {
-    navigate('/new-match', { state: { rematch: { teams: match.teams } } });
+    navigate('/new-match', { state: { rematch: { teams: match.teams, config: match.config } } });
   };
 
   const isFirstTime = !loading && recentCompleted.length === 0 && !activeMatch;
@@ -546,7 +574,7 @@ export default function HomePage() {
     <div className="min-h-screen bg-pitch flex flex-col">
       <AppHeader />
 
-      {loading ? (
+      {loading || !ready ? (
         <HomeSkeleton />
       ) : isFirstTime ? (
         <WelcomeScreen onStart={() => navigate('/new-match')} />
@@ -557,6 +585,7 @@ export default function HomePage() {
             <LiveMatchBanner
               match={activeMatch}
               liveScore={liveScore}
+              lastActivity={activeMatchLastActivity}
               onResume={() => navigate(`/match/${activeMatch.id}/scoring`)}
             />
           )}

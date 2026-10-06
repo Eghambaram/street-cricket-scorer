@@ -2,8 +2,27 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { readFileSync } from 'fs';
+import { execSync } from 'child_process';
+
+// ── Build identity shown on the Home screen ─────────────────────────────────
+// version comes from package.json; the build id is the short git commit (or a
+// timestamp when git isn't available) so every deploy is distinguishable.
+const appVersion: string = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')).version;
+const buildTime = new Date().toISOString();
+let buildId = buildTime.slice(0, 16).replace(/[-:T]/g, '');
+try {
+  buildId = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || buildId;
+} catch {
+  // not a git checkout — keep the timestamp id
+}
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_BUILD_ID__: JSON.stringify(buildId),
+    __APP_BUILD_TIME__: JSON.stringify(buildTime),
+  },
   plugins: [
     react(),
     VitePWA({

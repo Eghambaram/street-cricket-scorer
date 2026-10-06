@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Users, CheckCircle2, AlertTriangle, Undo2 } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { cn } from '@/utils/cn';
@@ -14,6 +14,8 @@ interface Props {
   completedInnings: Innings;
   inn1Stats: InningsStats;
   onStart: (params: { striker: string; nonStriker: string; bowler: string }) => void;
+  /** Reopen the 1st innings by undoing the ball (or declaration) that closed it. */
+  onUndo?: () => Promise<void>;
 }
 
 type Step = 'openers' | 'bowler';
@@ -72,7 +74,7 @@ function StepDots({ current, total }: { current: number; total: number }) {
   );
 }
 
-export function InningsBreakModal({ isOpen, match, completedInnings, inn1Stats, onStart }: Props) {
+export function InningsBreakModal({ isOpen, match, completedInnings, inn1Stats, onStart, onUndo }: Props) {
   const [step, setStep] = useState<Step>('openers');
   const [striker, setStriker] = useState('');
   const [nonStriker, setNonStriker] = useState('');
@@ -143,6 +145,21 @@ export function InningsBreakModal({ isOpen, match, completedInnings, inn1Stats, 
           <p className="text-muted text-xs mt-0.5">off {match.config.overs * 6} balls</p>
         </div>
       </div>
+
+      {onUndo && (
+        <button
+          onClick={async () => {
+            if (starting) return;
+            setStarting(true);
+            try { await onUndo(); } finally { setStarting(false); }
+          }}
+          disabled={starting}
+          className="w-full flex items-center justify-center gap-2 -mt-2 mb-5 py-2 rounded-xl border border-white/10 bg-pitch-dark text-muted text-xs font-semibold hover:border-gold/30 hover:text-white transition-all active:scale-[0.98] disabled:opacity-40"
+        >
+          <Undo2 size={13} className="shrink-0" />
+          {completedInnings.completedReason === 'declared' ? 'Undo declaration — resume 1st innings' : 'Undo last ball — resume 1st innings'}
+        </button>
+      )}
 
       <StepDots current={step === 'openers' ? 0 : 1} total={2} />
 

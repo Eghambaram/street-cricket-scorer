@@ -3,7 +3,8 @@ import { v4 as uuid } from 'uuid';
 import type { Match, Innings } from '@/types/match.types';
 import type { Delivery, InningsStats } from '@/types/delivery.types';
 import type { Wicket } from '@/types/delivery.types';
-import { saveInnings } from '@/db/repos/inningsRepo';
+import { saveInnings, getMatchInnings, deleteInnings } from '@/db/repos/inningsRepo';
+import { saveMatch } from '@/db/repos/matchRepo';
 import {
   getInningsDeliveries,
   addDelivery,
@@ -13,6 +14,7 @@ import {
   computeInningsStats,
   computeNextStrikerIndex,
   isLegalDelivery,
+  getMaxWickets,
 } from '@/utils/cricket';
 import { getFreeHitMode } from '@/types/rules.types';
 
@@ -25,7 +27,7 @@ interface ScoringState {
 
   loadInnings: (match: Match, innings: Innings) => Promise<void>;
   scoreDelivery: (params: ScoreParams) => Promise<DeliveryResult>;
-  undoLastDelivery: () => Promise<void>;
+  undoLastDelivery: () => Promise<UndoResult>;
   finaliseInnings: (reason: Innings['completedReason']) => Promise<void>;
   rotateStrike: () => Promise<void>;
   changeBatsman: (position: 0 | 1, newPlayerId: string) => Promise<void>;
@@ -41,6 +43,9 @@ export interface ScoreParams {
   extras: Delivery['extras'];
   wicket?: Wicket;
 }
+
+/** What an undo actually reverted: a ball, or only an innings declaration. */
+export type UndoResult = 'delivery' | 'reopened_innings';
 
 export interface DeliveryResult {
   delivery: Delivery;
@@ -197,8 +202,8 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
     }
 
     // ── Innings-over detection ────────────────────────────────────────────────
-    const { config, rules } = match;
-    const maxWickets = rules.lastManStands ? config.playersPerSide : config.playersPerSide - 1;
+    const { config } = match;
+    const maxWickets = getMaxWickets(match, innings.battingTeamId);
     const oversComplete =
       newStats.overs >= config.overs &&
       newStats.balls === 0 &&
@@ -217,7 +222,41 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
 
   undoLastDelivery: async () => {
     const { match, innings, deliveries } = get();
-    if (!innings || deliveries.length === 0) return;
+    if (!innings) throw new Error('No active innings');
+
+    // A declared innings was closed by the scorer, not by a ball — undo just
+    // reopens it and leaves the delivery history intact.
+    if (innings.status === 'completed' && innings.completedReason === 'declared') {
+      const reopened: Innings = { ...innings, status: 'active', completedReason: undefined };
+      await saveInnings(reopened);
+      set({ innings: reopened });
+      return 'reopened_innings';
+    }
+
+    if (deliveries.length === 0) {
+      // Nothing bowled in the 2nd innings yet: step back into the 1st innings,
+      // discard the empty 2nd innings and undo whatever closed the 1st.
+      if (innings.inningsNumber !== 2 || !match) throw new Error('Nothing to undo');
+      const previous = (await getMatchInnings(match.id)).find((i) => i.inningsNumber === 1);
+      if (!previous) throw new Error('Nothing to undo');
+
+      await deleteInnings(innings.id);
+      const updatedMatch: Match = {
+        ...match,
+        status: 'innings_1',
+        inningsIds: match.inningsIds.filter((id) => id !== innings.id),
+      };
+      await saveMatch(updatedMatch);
+
+      const previousDeliveries = await getInningsDeliveries(previous.id);
+      set({
+        match:        updatedMatch,
+        innings:      previous,
+        deliveries:   previousDeliveries,
+        lastDelivery: previousDeliveries[previousDeliveries.length - 1] ?? null,
+      });
+      return get().undoLastDelivery();
+    }
 
     const allPlayers = match?.teams.flatMap((t) => t.players) ?? [];
     const nameOf = (id: string) => allPlayers.find((p) => p.id === id)?.name ?? id;
@@ -235,6 +274,7 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
       innings:       updatedInnings,
       lastDelivery:  newDeliveries[newDeliveries.length - 1] ?? null,
     });
+    return 'delivery';
   },
 
   finaliseInnings: async (reason) => {

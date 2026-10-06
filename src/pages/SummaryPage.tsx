@@ -360,7 +360,7 @@ export default function SummaryPage() {
                 variant="gold"
                 size="lg"
                 fullWidth
-                onClick={() => navigate('/new-match', { state: { rematch: { teams: match.teams } } })}
+                onClick={() => navigate('/new-match', { state: { rematch: { teams: match.teams, config: match.config } } })}
               >
                 <RefreshCw size={18} className="mr-2" /> Rematch
               </Button>
