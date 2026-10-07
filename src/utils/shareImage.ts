@@ -1,7 +1,7 @@
 import type { Match, Innings } from '@/types/match.types';
 import type { InningsStats } from '@/types/delivery.types';
 import { formatScore, formatOversShort } from './format';
-import { computeRunRate } from './cricket';
+import { computeRunRate, captainMark } from './cricket';
 import { bowlerOversDisplay } from './cricket';
 
 // ─── Colour tokens ───────────────────────────────────────────────────────────
@@ -227,9 +227,19 @@ function drawInningsContent(
     hline(ctx, INNER_X, y, INNER_W);
     const rowH = 66;
     const notOut = !bs.isOut;
+    // Name, then a muted "(c)" for the captain that is never ellipsized away
+    const mark = captainMark(battingTeam, bs.playerId);
+    setFont(ctx, 20, '500');
+    const markW = mark ? ctx.measureText(mark).width : 0;
+    const nameWeight = notOut ? '800' : '600';
     drawText(ctx, playerName(bs.playerId), INNER_X, y + 30, {
-      size: 22, weight: notOut ? '800' : '600', color: C.fg, maxWidth: nameMaxW,
+      size: 22, weight: nameWeight, color: C.fg, maxWidth: nameMaxW - markW,
     });
+    if (mark) {
+      setFont(ctx, 22, nameWeight);
+      const drawnW = ctx.measureText(ellipsize(ctx, playerName(bs.playerId), nameMaxW - markW)).width;
+      drawText(ctx, mark, INNER_X + drawnW, y + 30, { size: 20, weight: '500', color: C.muted });
+    }
     if (bs.isOut && bs.dismissalText) {
       drawText(ctx, bs.dismissalText, INNER_X, y + 54, { size: 16, weight: '500', color: C.muted, maxWidth: nameMaxW });
     } else if (notOut) {
@@ -276,7 +286,7 @@ function drawInningsContent(
     y += 30;
     drawText(ctx, 'YET TO BAT', INNER_X, y, { size: 13, weight: '800', color: C.mutedDim, tracking: 1.5 });
     setFont(ctx, 18, '500');
-    const lines = wrapParts(ctx, yetToBat.map((p) => p.name), '  ·  ', INNER_W);
+    const lines = wrapParts(ctx, yetToBat.map((p) => `${p.name}${captainMark(battingTeam, p.id)}`), '  ·  ', INNER_W);
     lines.forEach((line) => {
       y += 28;
       drawText(ctx, line, INNER_X, y, { size: 18, weight: '500', color: C.muted });

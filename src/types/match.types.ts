@@ -33,6 +33,8 @@ export interface Team {
   id: string;
   name: string;
   players: Player[];
+  /** Player id of the captain; optional (older matches have none). */
+  captainId?: string;
 }
 
 export interface Toss {

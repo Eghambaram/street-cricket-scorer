@@ -2,7 +2,7 @@ import { Pencil } from 'lucide-react';
 import type { Innings, Match } from '@/types/match.types';
 import type { InningsStats } from '@/types/delivery.types';
 import { formatScore, formatOversShort } from '@/utils/format';
-import { computeRunRate } from '@/utils/cricket';
+import { computeRunRate, captainMark } from '@/utils/cricket';
 import { cn } from '@/utils/cn';
 
 interface Props {
@@ -90,6 +90,9 @@ export function BattingCard({ match, innings, stats, onEditPlayer }: Props) {
                     bs.isOut && !isRetired ? 'text-muted' : 'text-white',
                   )}>
                     {playerName(bs.playerId)}
+                    {captainMark(battingTeam, bs.playerId) && (
+                      <span className="text-muted font-medium">{captainMark(battingTeam, bs.playerId)}</span>
+                    )}
                   </span>
                   {isStriker && (
                     <span className="shrink-0 text-[8px] font-black bg-gold/20 text-gold border border-gold/30 rounded px-1 leading-none uppercase tracking-wide">bat</span>
@@ -160,7 +163,7 @@ export function BattingCard({ match, innings, stats, onEditPlayer }: Props) {
                 key={p.id}
                 className="text-[11px] font-semibold text-muted/70 bg-pitch-dark border border-white/[0.06] rounded-lg px-2 py-1 leading-none"
               >
-                {p.name}
+                {p.name}{captainMark(battingTeam, p.id)}
               </span>
             ))}
           </div>

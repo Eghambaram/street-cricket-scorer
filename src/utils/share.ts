@@ -1,7 +1,7 @@
 import type { Match, Innings } from '@/types/match.types';
 import type { InningsStats } from '@/types/delivery.types';
 import { formatDate, formatScore, formatOversShort } from './format';
-import { bowlerOversDisplay } from './cricket';
+import { bowlerOversDisplay, captainMark } from './cricket';
 
 export function buildShareText(
   match: Match,
@@ -13,7 +13,7 @@ export function buildShareText(
   const team = (id: string) => match.teams.find((t) => t.id === id);
   const player = (id: string, teamId?: string) => {
     const t = teamId ? team(teamId) : match.teams[0];
-    return t?.players.find((p) => p.id === id)?.name ?? id;
+    return `${t?.players.find((p) => p.id === id)?.name ?? id}${captainMark(t, id)}`;
   };
 
   const lines: string[] = [];

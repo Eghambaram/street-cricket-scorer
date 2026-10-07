@@ -34,6 +34,7 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
 
   // Auto-switch to saved mode only when no players are already filled in (i.e. not a rematch/prefill)
   const currentPlayers = watch(`teams.${teamIndex}.players`);
+  const captainId = watch(`teams.${teamIndex}.captainId`);
   const hasPrefilledData = currentPlayers?.some((p) => p.name?.trim());
   useEffect(() => {
     if (teams.length > 0 && mode === 'manual' && !selectedSavedTeam && !hasPrefilledData) {
@@ -66,6 +67,8 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
       .map((p) => ({ id: otherTeamIds.has(p.id) ? crypto.randomUUID() : p.id, name: p.name, teamId }));
     setValue(`teams.${teamIndex}.name`, selectedSavedTeam.name);
     replace(selected);
+    // New roster — previous captain choice no longer applies
+    setValue(`teams.${teamIndex}.captainId`, undefined);
     // Drop back to the field view so user can see the result
     setMode('manual');
   };
@@ -259,8 +262,14 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
                 <Plus size={14} /> Add Player
               </button>
             </div>
+            <p className="text-[11px] text-muted/70 -mt-1">
+              Tap <span className="font-black text-gold">C</span> to pick the captain (optional)
+            </p>
             {fields.map((field, i) => {
               const { ref: rhfRef, ...rest } = register(`teams.${teamIndex}.players.${i}.name`);
+              // useFieldArray's field.id is its own render key — the player's id lives in the form value
+              const playerId = getValues(`teams.${teamIndex}.players.${i}.id`);
+              const isCaptain = !!playerId && captainId === playerId;
               return (
                 <div key={field.id} className="flex items-center gap-2">
                   <span className="text-muted text-xs w-5 text-right shrink-0">{i + 1}.</span>
@@ -279,10 +288,35 @@ function TeamForm({ teamIndex, recentNames }: { teamIndex: 0 | 1; recentNames: s
                         }
                       }
                     }}
-                    className="flex-1 bg-pitch-dark border border-pitch-light rounded-xl px-3 py-2.5 text-white placeholder-muted/50 focus:outline-none focus:ring-2 focus:ring-gold/50 text-sm"
+                    className={cn(
+                      'flex-1 bg-pitch-dark border rounded-xl px-3 py-2.5 text-white placeholder-muted/50 focus:outline-none focus:ring-2 focus:ring-gold/50 text-sm',
+                      isCaptain ? 'border-gold/60' : 'border-pitch-light',
+                    )}
                   />
+                  {/* Captain toggle — one per team; tap again to clear */}
+                  <button
+                    type="button"
+                    onClick={() => setValue(`teams.${teamIndex}.captainId`, isCaptain ? undefined : playerId, { shouldDirty: true })}
+                    className={cn(
+                      'w-10 h-10 shrink-0 rounded-full border text-xs font-black transition-all active:scale-95',
+                      isCaptain
+                        ? 'bg-gold border-gold text-pitch shadow-[0_0_10px_0_rgb(var(--color-gold)/0.35)]'
+                        : 'bg-transparent border-pitch-light text-muted/60 hover:border-gold/50 hover:text-gold',
+                    )}
+                    aria-label={isCaptain ? `Remove ${currentNames[i] || `Player ${i + 1}`} as captain` : `Make ${currentNames[i] || `Player ${i + 1}`} captain`}
+                    aria-pressed={isCaptain}
+                  >
+                    C
+                  </button>
                   {fields.length > 2 && (
-                    <button type="button" onClick={() => remove(i)} className="text-muted hover:text-wicket p-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isCaptain) setValue(`teams.${teamIndex}.captainId`, undefined);
+                        remove(i);
+                      }}
+                      className="text-muted hover:text-wicket p-1 shrink-0"
+                    >
                       <Trash2 size={15} />
                     </button>
                   )}

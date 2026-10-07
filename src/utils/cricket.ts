@@ -1,6 +1,6 @@
 import type { Delivery, InningsStats, FallOfWicket, OverSummary } from '@/types/delivery.types';
 import type { BatsmanScore, BowlerScore } from '@/types/player.types';
-import type { Match } from '@/types/match.types';
+import type { Match, Team } from '@/types/match.types';
 
 export function isLegalDelivery(d: Delivery): boolean {
   return d.extras.wide === 0 && d.extras.noBall === 0;
@@ -224,6 +224,11 @@ export function isOverComplete(deliveries: Delivery[]): boolean {
   const currentOverDeliveries = deliveries.filter((d) => d.overIndex === lastDelivery.overIndex);
   const legalCount = currentOverDeliveries.filter(isLegalDelivery).length;
   return legalCount === 6;
+}
+
+/** " (c)" when the player captains the team — standard scorecard notation. */
+export function captainMark(team: Pick<Team, 'captainId'> | undefined, playerId: string): string {
+  return team?.captainId && team.captainId === playerId ? ' (c)' : '';
 }
 
 /** Squad size of a team as fixed at match creation (supports uneven teams). */

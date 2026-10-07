@@ -26,10 +26,22 @@ export interface NewMatchForm {
   config: typeof DEFAULT_CONFIG;
   rules: StreetCricketRules;
   teams: [
-    { id: string; name: string; players: { id: string; name: string; teamId: string }[] },
-    { id: string; name: string; players: { id: string; name: string; teamId: string }[] }
+    { id: string; name: string; players: { id: string; name: string; teamId: string }[]; captainId?: string },
+    { id: string; name: string; players: { id: string; name: string; teamId: string }[]; captainId?: string }
   ];
   toss: { winnerTeamId: string; choice: 'bat' | 'bowl' };
+}
+
+// Captain name under a team on the review card (renders nothing when none chosen)
+function CaptainLine({ team }: { team: NewMatchForm['teams'][number] }) {
+  const captain = team.players.find((p) => p.id === team.captainId);
+  if (!captain) return null;
+  const index = team.players.indexOf(captain);
+  return (
+    <p className="text-muted text-[11px] font-semibold truncate mt-0.5">
+      <span className="text-gold font-black">C</span> · {captain.name?.trim() || `Player ${index + 1}`}
+    </p>
+  );
 }
 
 function blankPlayers(teamId: string, count: number) {
@@ -251,8 +263,8 @@ export default function SetupPage() {
       teams: rematchTeams
         ? [
             // Preserve original player IDs so career stats accumulate correctly
-            { id: teamAId, name: rematchTeams[0].name, players: rematchTeams[0].players.map((p) => ({ id: p.id, name: p.name, teamId: teamAId })) },
-            { id: teamBId, name: rematchTeams[1].name, players: rematchTeams[1].players.map((p) => ({ id: p.id, name: p.name, teamId: teamBId })) },
+            { id: teamAId, name: rematchTeams[0].name, players: rematchTeams[0].players.map((p) => ({ id: p.id, name: p.name, teamId: teamAId })), captainId: rematchTeams[0].captainId },
+            { id: teamBId, name: rematchTeams[1].name, players: rematchTeams[1].players.map((p) => ({ id: p.id, name: p.name, teamId: teamBId })), captainId: rematchTeams[1].captainId },
           ]
         : [
             // Each team gets its own freshly built array — never share references
@@ -322,6 +334,8 @@ export default function SetupPage() {
           id: teamId,
           name: t.name?.trim() || `Team ${i === 0 ? 'A' : 'B'}`,
           players: resolvedPlayers,
+          // Keep the captain only if they are still in the final squad
+          captainId: resolvedPlayers.some((p) => p.id === t.captainId) ? t.captainId : undefined,
         };
       }) as Match['teams'];
 
@@ -423,10 +437,12 @@ export default function SetupPage() {
                   <div className="flex items-center gap-3 mb-4">
                     <div className="flex-1 bg-pitch-dark rounded-xl py-3 px-3 text-center border border-pitch-light/40">
                       <p className="text-white font-black text-sm truncate">{formValues.teams[0].name || 'Team A'}</p>
+                      <CaptainLine team={formValues.teams[0]} />
                     </div>
                     <span className="font-display text-xl text-gold shrink-0">VS</span>
                     <div className="flex-1 bg-pitch-dark rounded-xl py-3 px-3 text-center border border-pitch-light/40">
                       <p className="text-white font-black text-sm truncate">{formValues.teams[1].name || 'Team B'}</p>
+                      <CaptainLine team={formValues.teams[1]} />
                     </div>
                   </div>
                   {/* Format badges */}
