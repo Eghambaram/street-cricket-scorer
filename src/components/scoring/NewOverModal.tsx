@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { AlertTriangle, CheckCircle2, UserPlus } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, UserPlus } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { cn } from '@/utils/cn';
 import type { Innings, Match } from '@/types/match.types';
 import type { InningsStats } from '@/types/delivery.types';
-import { bowlerOversDisplay } from '@/utils/cricket';
+import { bowlerOversDisplay, computeRunRate } from '@/utils/cricket';
 import { econColor } from '@/utils/format';
 
 interface Props {
@@ -15,8 +15,12 @@ interface Props {
   stats: InningsStats;
   completedOverRuns: number;
   completedOverWickets: number;
+  /** 2nd-innings target (inn1 runs + 1); null/undefined in the 1st innings */
+  target?: number | null;
   onSelect: (bowlerId: string) => void;
   onAddBowler: (name: string) => Promise<void> | void;
+  /** Hide the sheet to view the scoreboard; reopened from the scoring screen */
+  onClose?: () => void;
 }
 
 export function NewOverModal({
@@ -26,8 +30,10 @@ export function NewOverModal({
   stats,
   completedOverRuns,
   completedOverWickets,
+  target,
   onSelect,
   onAddBowler,
+  onClose,
 }: Props) {
   const [selected, setSelected] = useState('');
   const [newBowlerName, setNewBowlerName] = useState('');
@@ -56,9 +62,18 @@ export function NewOverModal({
   const completedOverIndex = stats.overs;
   const isOpeningBowler = completedOverIndex === 0 && innings.currentBowlerId === null;
 
+  // Prefer the persisted over summary (survives a page reload); fall back to props
+  const lastOverSummary = stats.overSummaries.find((ov) => ov.overIndex === completedOverIndex - 1);
+  const overRuns = lastOverSummary?.runs ?? completedOverRuns;
+  const overWickets = lastOverSummary?.wickets ?? completedOverWickets;
+
   const modalTitle = isOpeningBowler
     ? 'Select Opening Bowler'
-    : `Over ${completedOverIndex} — ${completedOverRuns}R${completedOverWickets > 0 ? ` ${completedOverWickets}W` : ''}`;
+    : `Over ${completedOverIndex} — ${overRuns}R${overWickets > 0 ? ` ${overWickets}W` : ''}`;
+
+  const battingTeam = match.teams.find((t) => t.id === innings.battingTeamId);
+  const showScoreStrip = stats.legalBalls > 0 || target != null;
+  const remainingBalls = match.config.overs * 6 - stats.legalBalls;
 
   // Auto-select sole eligible bowler
   useEffect(() => {
@@ -78,6 +93,33 @@ export function NewOverModal({
 
   return (
     <Modal isOpen={isOpen} title={modalTitle} persistent>
+      {/* Current match score — keeps the scorer in context while picking a bowler */}
+      {showScoreStrip && (
+        <div className="mb-4 rounded-xl border border-pitch-light bg-pitch-dark px-4 py-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-muted text-[11px] font-bold uppercase tracking-wide truncate">
+              {battingTeam?.name ?? 'Batting'} · {innings.inningsNumber === 1 ? '1st' : '2nd'} Inn
+            </span>
+            <span className="text-muted text-xs font-mono shrink-0">
+              {Math.floor(stats.legalBalls / 6)}.{stats.legalBalls % 6}/{match.config.overs} ov
+            </span>
+          </div>
+          <div className="flex items-end justify-between mt-0.5">
+            <span className="font-display text-3xl text-white leading-none">
+              {stats.totalRuns}<span className="text-muted text-2xl">/{stats.wickets}</span>
+            </span>
+            <span className="text-muted text-xs">
+              RR <span className="text-white font-bold">{computeRunRate(stats.totalRuns, stats.legalBalls).toFixed(2)}</span>
+            </span>
+          </div>
+          {target != null && (
+            <p className="text-gold text-xs font-bold mt-1">
+              Target {target} · Need {Math.max(0, target - stats.totalRuns)} off {remainingBalls}b
+            </p>
+          )}
+        </div>
+      )}
+
       {!isOpeningBowler && (
         <p className="text-muted text-sm text-center mb-4">Select bowler for Over {completedOverIndex + 1}</p>
       )}
@@ -189,6 +231,15 @@ export function NewOverModal({
       >
         {isOpeningBowler ? 'Start Match 🏏' : `Start Over ${completedOverIndex + 1}`}
       </Button>
+
+      {onClose && (
+        <button
+          onClick={onClose}
+          className="mt-2 w-full min-h-[48px] flex items-center justify-center gap-1.5 rounded-xl text-sm font-semibold text-muted active:bg-white/5"
+        >
+          <ArrowLeft size={15} /> Back to scoreboard
+        </button>
+      )}
     </Modal>
   );
 }
