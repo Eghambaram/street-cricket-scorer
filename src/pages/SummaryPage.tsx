@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Share2, ClipboardList, Home, RefreshCw, CheckCircle2, Zap, Target } from 'lucide-react';
+import { Share2, ClipboardList, Home, RefreshCw, CheckCircle2, Zap, Target, Undo2 } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button } from '@/components/common/Button';
+import { Modal } from '@/components/common/Modal';
 import { Spinner } from '@/components/common/Spinner';
 import { Confetti } from '@/components/common/Confetti';
 import { getMatch } from '@/db/repos/matchRepo';
@@ -14,6 +15,7 @@ import { buildShareText } from '@/utils/share';
 import { buildShareImage, shareImageOrFallback } from '@/utils/shareImage';
 import { useUIStore } from '@/store/uiStore';
 import { useMatch } from '@/hooks/useMatch';
+import { useScoring } from '@/hooks/useScoring';
 import type { Match, Innings } from '@/types/match.types';
 import type { InningsStats } from '@/types/delivery.types';
 import { cn } from '@/utils/cn';
@@ -21,7 +23,10 @@ import { cn } from '@/utils/cn';
 export default function SummaryPage() {
   const { matchId } = useParams<{ matchId: string }>();
   const navigate = useNavigate();
-  const { upsertMatch } = useMatch();
+  const { upsertMatch, loadMatches } = useMatch();
+  const { reopenMatch } = useScoring();
+  const [showUndoConfirm, setShowUndoConfirm] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const { addToast } = useUIStore();
   const [loading, setLoading] = useState(true);
   const [match, setMatch] = useState<Match | null>(null);
@@ -89,6 +94,18 @@ export default function SummaryPage() {
     }
   };
 
+  // Wrong final ball (e.g. 1 entered instead of 4)? Reopen the match and go back to scoring.
+  const handleUndoAndResume = async () => {
+    if (!match || reopening) return;
+    setReopening(true);
+    const result = await reopenMatch(match);
+    setReopening(false);
+    setShowUndoConfirm(false);
+    if (!result) return;
+    await loadMatches();
+    navigate(`/match/${match.id}/scoring`, { replace: true });
+  };
+
   const handleMotmSave = async (id: string) => {
     if (!match) return;
     const updated: Match = { ...match, result: { ...match.result!, manOfTheMatchId: id } };
@@ -106,6 +123,10 @@ export default function SummaryPage() {
   const winnerTeam = winnerId ? match.teams.find((t) => t.id === winnerId) : null;
   const loserTeam  = winnerId ? match.teams.find((t) => t.id !== winnerId) : null;
   const isTie = !winnerId && match.status === 'completed';
+  // Mirrors reopenCompletedMatch: only a 2nd-innings ball that ended the match gets removed
+  const inn2Reason = innings2?.innings.completedReason;
+  const lastBallEndedMatch = innings2?.innings.status === 'completed'
+    && inn2Reason !== 'declared' && inn2Reason !== 'abandoned';
 
   // Aggregate match stats
   const totalRuns    = (innings1?.stats.totalRuns    ?? 0) + (innings2?.stats.totalRuns    ?? 0);
@@ -375,7 +396,24 @@ export default function SummaryPage() {
               <Button variant="ghost" size="lg" fullWidth onClick={() => navigate('/')}>
                 <Home size={18} className="mr-2" /> Back to Home
               </Button>
+              <Button variant="ghost" size="md" fullWidth onClick={() => setShowUndoConfirm(true)}>
+                <Undo2 size={16} className="mr-1.5" /> Wrong result? Undo last ball
+              </Button>
             </div>
+
+            <Modal isOpen={showUndoConfirm} onClose={() => setShowUndoConfirm(false)} title="Undo & Resume Scoring?">
+              <p className="text-muted text-sm text-center mb-5">
+                {lastBallEndedMatch
+                  ? 'The last ball will be removed and the result cleared, so you can re-enter it correctly.'
+                  : 'The result will be cleared and the match reopened where scoring stopped.'}
+              </p>
+              <div className="flex gap-2">
+                <Button variant="secondary" fullWidth onClick={() => setShowUndoConfirm(false)}>Cancel</Button>
+                <Button variant="gold" fullWidth disabled={reopening} onClick={handleUndoAndResume}>
+                  {lastBallEndedMatch ? 'Undo last ball' : 'Reopen match'}
+                </Button>
+              </div>
+            </Modal>
           </div>
         </div>
       </div>

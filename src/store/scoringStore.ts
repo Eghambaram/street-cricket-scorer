@@ -28,6 +28,7 @@ interface ScoringState {
   loadInnings: (match: Match, innings: Innings) => Promise<void>;
   scoreDelivery: (params: ScoreParams) => Promise<DeliveryResult>;
   undoLastDelivery: () => Promise<UndoResult>;
+  reopenCompletedMatch: (match: Match) => Promise<ReopenResult>;
   finaliseInnings: (reason: Innings['completedReason']) => Promise<void>;
   rotateStrike: () => Promise<void>;
   changeBatsman: (position: 0 | 1, newPlayerId: string) => Promise<void>;
@@ -46,6 +47,9 @@ export interface ScoreParams {
 
 /** What an undo actually reverted: a ball, or only an innings declaration. */
 export type UndoResult = 'delivery' | 'reopened_innings';
+
+/** What reopening a finished match reverted: a ball, an innings close, or only the result. */
+export type ReopenResult = UndoResult | 'reopened_match';
 
 export interface DeliveryResult {
   delivery: Delivery;
@@ -224,9 +228,12 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
     const { match, innings, deliveries } = get();
     if (!innings) throw new Error('No active innings');
 
-    // A declared innings was closed by the scorer, not by a ball — undo just
-    // reopens it and leaves the delivery history intact.
-    if (innings.status === 'completed' && innings.completedReason === 'declared') {
+    // A declared/abandoned innings was closed by the scorer, not by a ball — undo
+    // just reopens it and leaves the delivery history intact.
+    if (
+      innings.status === 'completed' &&
+      (innings.completedReason === 'declared' || innings.completedReason === 'abandoned')
+    ) {
       const reopened: Innings = { ...innings, status: 'active', completedReason: undefined };
       await saveInnings(reopened);
       set({ innings: reopened });
@@ -275,6 +282,28 @@ export const useScoringStore = create<ScoringState>((set, get) => ({
       lastDelivery:  newDeliveries[newDeliveries.length - 1] ?? null,
     });
     return 'delivery';
+  },
+
+  // Undo from the Summary page: clear the result and step back to where scoring
+  // stopped. Only a 2nd-innings ball that ended the match is deleted; a match
+  // closed manually (or at the innings break) is just reopened.
+  reopenCompletedMatch: async (match) => {
+    const allInnings = await getMatchInnings(match.id);
+    const last = [...allInnings].sort((a, b) => b.inningsNumber - a.inningsNumber)[0];
+    if (!last) throw new Error('No innings to reopen');
+
+    const closedByScorer = last.completedReason === 'declared' || last.completedReason === 'abandoned';
+    const status: Match['status'] =
+      last.inningsNumber === 2 ? 'innings_2'
+      : last.status === 'completed' && !closedByScorer ? 'innings_break'
+      : 'innings_1';
+
+    const reopened: Match = { ...match, status, result: undefined };
+    await saveMatch(reopened);
+    await get().loadInnings(reopened, last);
+
+    if (last.status === 'active' || status === 'innings_break') return 'reopened_match';
+    return get().undoLastDelivery();
   },
 
   finaliseInnings: async (reason) => {

@@ -518,23 +518,18 @@ export default function ScoringPage() {
           />
         </div>
 
-        {/* Bowler panel, or single-player over info */}
-        <div className="px-3 pb-2">
-          {match.config.isSinglePlayerMode ? (
-            <div className="bg-pitch-light rounded-xl flex items-center gap-4 px-4 py-2.5">
-              <span className="text-[11px] font-bold text-muted uppercase tracking-wide">Over</span>
-              <span className="font-bold text-white text-lg">{stats.overs + 1}</span>
-              <span className="text-muted text-xs font-mono">{stats.balls} / 6 balls</span>
-            </div>
-          ) : (
+        {/* Bowler panel — hidden in single-player mode; overs already show in the
+            Scoreboard and the current over in the OverTracker below */}
+        {!match.config.isSinglePlayerMode && (
+          <div className="px-3 pb-2">
             <BowlerPanel
               match={match}
               innings={innings}
               stats={stats}
               onChangeBowler={() => setShowChangeBowler(true)}
             />
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Over tracker */}
         <OverTracker deliveries={deliveries} currentOverIndex={stats.overs} />
@@ -554,9 +549,13 @@ export default function ScoringPage() {
         {needsBowlerSelection && (
           <div className="px-4 pb-4 pt-1 space-y-1">
             <Button variant="gold" size="lg" fullWidth onClick={() => setShowNewOver(true)}>
-              Select Opening Bowler
+              {stats.legalBalls === 0 ? 'Select Opening Bowler' : `Select Bowler for Over ${stats.overs + 1}`}
             </Button>
-            <p className="text-muted text-xs text-center">Choose who bowls the first over to start scoring</p>
+            <p className="text-muted text-xs text-center">
+              {stats.legalBalls === 0
+                ? 'Choose who bowls the first over to start scoring'
+                : `Over ${stats.overs} complete — pick the next bowler to continue`}
+            </p>
           </div>
         )}
         {needsBatsmanSelection && !needsBowlerSelection && (
@@ -620,8 +619,10 @@ export default function ScoringPage() {
         stats={stats}
         completedOverRuns={completedOverRuns}
         completedOverWickets={completedOverWickets}
+        target={innings.inningsNumber === 2 && inn1Stats ? inn1Stats.totalRuns + 1 : null}
         onSelect={handleNewOverBowler}
         onAddBowler={handleAddBowlerToTeam}
+        onClose={() => setShowNewOver(false)}
       />
 
       {inn1Stats && (

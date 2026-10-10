@@ -1,6 +1,6 @@
 import { useScoringStore, type ScoreParams } from '@/store/scoringStore';
 import { useUIStore } from '@/store/uiStore';
-import type { Innings } from '@/types/match.types';
+import type { Innings, Match } from '@/types/match.types';
 
 export function useScoring() {
   const store = useScoringStore();
@@ -34,7 +34,18 @@ export function useScoring() {
     }
   };
 
-  const selectNextBatsman = (inningsState: Innings, nextBatsmanId: string): Innings => {
+  const reopenMatch = async (match: Match) => {
+    try {
+      const result = await store.reopenCompletedMatch(match);
+      addToast(result === 'delivery' ? 'Last ball undone — match reopened' : 'Match reopened', 'info');
+      return result;
+    } catch {
+      addToast('Could not reopen match', 'error');
+      return null;
+    }
+  };
+
+  const selectNextBatsman =(inningsState: Innings, nextBatsmanId: string): Innings => {
     // Put next batsman at the vacant slot. The incoming player may be brand new,
     // a tap-and-changed batsman who is already in battingOrder, or a retired-hurt
     // batsman being recalled.
@@ -68,6 +79,7 @@ export function useScoring() {
     clear: store.clear,
     score,
     undo,
+    reopenMatch,
     selectNextBatsman,
   };
 }
