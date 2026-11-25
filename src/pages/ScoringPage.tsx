@@ -30,7 +30,7 @@ import { getMatchInnings, saveInnings } from '@/db/repos/inningsRepo';
 import { getInningsDeliveries } from '@/db/repos/playerRepo';
 import type { Innings, Match } from '@/types/match.types';
 import type { DeliveryExtras, Wicket } from '@/types/delivery.types';
-import { computeInningsStats, buildResultText, getMaxWickets, getTeamSize } from '@/utils/cricket';
+import { computeInningsStats, buildResultText, getMaxWickets, getTeamSize, addPlayersToTeam } from '@/utils/cricket';
 import { formatScore } from '@/utils/format';
 import { canContinueWithLoneBatter, getRemainingBatsmenCount } from '@/utils/inningsFlow';
 import { v4 as uuid } from 'uuid';
@@ -62,6 +62,9 @@ export default function ScoringPage() {
   const [showInningsSettings, setShowInningsSettings] = useState(false);
   const [settingsOvers, setSettingsOvers] = useState('');
   const [settingsLastManStands, setSettingsLastManStands] = useState(false);
+  // Late-joining players staged in Innings Settings, keyed by team id; applied on Save.
+  const [settingsNewPlayers, setSettingsNewPlayers] = useState<Record<string, string[]>>({});
+  const [settingsPlayerDrafts, setSettingsPlayerDrafts] = useState<Record<string, string>>({});
   const [pendingInningsBreak, setPendingInningsBreak] = useState<{ match: Match; completedInnings: Innings } | null>(null);
   const { isDark, toggle: toggleTheme } = useTheme();
 
@@ -69,7 +72,36 @@ export default function ScoringPage() {
     if (!match) return;
     setSettingsOvers(String(match.config.overs));
     setSettingsLastManStands(match.rules.lastManStands);
+    setSettingsNewPlayers({});
+    setSettingsPlayerDrafts({});
   }, [match]);
+
+  const stageNewPlayer = (teamId: string) => {
+    const team = match?.teams.find((t) => t.id === teamId);
+    if (!team) return;
+    const staged = settingsNewPlayers[teamId] ?? [];
+    const name = (settingsPlayerDrafts[teamId] ?? '').trim() || `Player ${team.players.length + staged.length + 1}`;
+    const taken = [...team.players.map((p) => p.name), ...staged].some((n) => n.toLowerCase() === name.toLowerCase());
+    if (taken) {
+      addToast(`${name} already in ${team.name}`, 'info');
+      return;
+    }
+    setSettingsNewPlayers({ ...settingsNewPlayers, [teamId]: [...staged, name] });
+    setSettingsPlayerDrafts({ ...settingsPlayerDrafts, [teamId]: '' });
+  };
+
+  const unstageNewPlayer = (teamId: string, index: number) => {
+    setSettingsNewPlayers({
+      ...settingsNewPlayers,
+      [teamId]: (settingsNewPlayers[teamId] ?? []).filter((_, i) => i !== index),
+    });
+  };
+
+  const closeInningsSettings = () => {
+    setShowInningsSettings(false);
+    setSettingsNewPlayers({});
+    setSettingsPlayerDrafts({});
+  };
 
   useEffect(() => {
     (async () => {
@@ -265,15 +297,7 @@ export default function ScoringPage() {
       addToast(`${name} already in bowling team`, 'info');
       return;
     }
-    const [teamA, teamB] = match.teams;
-    const updatedTeams: Match['teams'] = teamIndex === 0
-      ? [{ ...teamA, players: [...teamA.players, { id: uuid(), name, teamId: innings.bowlingTeamId }] }, teamB]
-      : [teamA, { ...teamB, players: [...teamB.players, { id: uuid(), name, teamId: innings.bowlingTeamId }] }];
-
-    const updatedMatch: Match = {
-      ...match,
-      teams: updatedTeams,
-    };
+    const updatedMatch = addPlayersToTeam(match, innings.bowlingTeamId, [name]);
     await upsertMatch(updatedMatch);
     await loadInnings(updatedMatch, innings);
     addToast(`${name} added to bowling team`, 'success');
@@ -472,7 +496,7 @@ export default function ScoringPage() {
                   />
                   <MenuAction
                     label="Innings Settings"
-                    sub="Update overs & last-man-stands"
+                    sub="Overs, players & last-man-stands"
                     onClick={() => { setShowMenu(false); setShowInningsSettings(true); }}
                   />
                   <MenuAction
@@ -644,7 +668,7 @@ export default function ScoringPage() {
         </div>
       </Modal>
 
-      <Modal isOpen={showInningsSettings} onClose={() => setShowInningsSettings(false)} title="Innings Settings">
+      <Modal isOpen={showInningsSettings} onClose={closeInningsSettings} title="Innings Settings">
         <div className="space-y-4">
           <div>
             <label className="text-xs text-muted font-semibold">Total Overs (match)</label>
@@ -661,8 +685,56 @@ export default function ScoringPage() {
             <span className="text-sm text-white font-semibold">Last Man Stands</span>
             <input type="checkbox" checked={settingsLastManStands} onChange={(e) => setSettingsLastManStands(e.target.checked)} />
           </label>
+          <div>
+            <label className="text-xs text-muted font-semibold">Players per side</label>
+            <p className="text-[11px] text-muted mt-0.5">Someone joined late? Add them to their team. Leave the name blank to auto-name.</p>
+            <div className="mt-2 space-y-3">
+              {match.teams.map((team) => {
+                const staged = settingsNewPlayers[team.id] ?? [];
+                const size = Math.max(getTeamSize(match, team.id), team.players.length) + staged.length;
+                return (
+                  <div key={team.id} className="bg-pitch border border-pitch-light rounded-xl px-4 py-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-white font-semibold truncate">
+                        {team.name}
+                        <span className="text-muted font-normal ml-1">
+                          · {team.id === innings.battingTeamId ? 'batting' : 'bowling'}
+                        </span>
+                      </span>
+                      <span className="text-sm text-gold font-bold shrink-0">{size} players</span>
+                    </div>
+                    {staged.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {staged.map((name, i) => (
+                          <button
+                            key={`${name}-${i}`}
+                            onClick={() => unstageNewPlayer(team.id, i)}
+                            className="px-2.5 py-1 rounded-full bg-gold/15 border border-gold/40 text-gold text-xs font-semibold"
+                            aria-label={`Remove ${name}`}
+                          >
+                            + {name} ✕
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="text"
+                        value={settingsPlayerDrafts[team.id] ?? ''}
+                        onChange={(e) => setSettingsPlayerDrafts({ ...settingsPlayerDrafts, [team.id]: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') stageNewPlayer(team.id); }}
+                        placeholder="New player name"
+                        className="flex-1 min-w-0 bg-pitch-light/40 border border-pitch-light rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-gold/50"
+                      />
+                      <Button variant="secondary" onClick={() => stageNewPlayer(team.id)}>Add</Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           <div className="flex gap-3">
-            <Button variant="secondary" fullWidth onClick={() => setShowInningsSettings(false)}>Cancel</Button>
+            <Button variant="secondary" fullWidth onClick={closeInningsSettings}>Cancel</Button>
             <Button
               variant="gold"
               fullWidth
@@ -674,15 +746,20 @@ export default function ScoringPage() {
                   addToast(`Overs must be at least ${minOvers}`, 'error');
                   return;
                 }
-                const updatedMatch: Match = {
+                let updatedMatch: Match = {
                   ...match,
                   config: { ...match.config, overs: parsedOvers },
                   rules: { ...match.rules, lastManStands: settingsLastManStands },
                 };
+                let addedCount = 0;
+                for (const [teamId, names] of Object.entries(settingsNewPlayers)) {
+                  updatedMatch = addPlayersToTeam(updatedMatch, teamId, names);
+                  addedCount += names.length;
+                }
                 await upsertMatch(updatedMatch);
                 await loadInnings(updatedMatch, innings);
-                setShowInningsSettings(false);
-                addToast('Innings settings updated', 'success');
+                closeInningsSettings();
+                addToast(addedCount > 0 ? `Settings updated · ${addedCount} player${addedCount > 1 ? 's' : ''} added` : 'Innings settings updated', 'success');
               }}
             >
               Save

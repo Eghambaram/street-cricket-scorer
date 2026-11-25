@@ -1,6 +1,7 @@
 import type { Delivery, InningsStats, FallOfWicket, OverSummary } from '@/types/delivery.types';
 import type { BatsmanScore, BowlerScore } from '@/types/player.types';
 import type { Match, Team } from '@/types/match.types';
+import { v4 as uuid } from 'uuid';
 
 export function isLegalDelivery(d: Delivery): boolean {
   return d.extras.wide === 0 && d.extras.noBall === 0;
@@ -234,6 +235,23 @@ export function captainMark(team: Pick<Team, 'captainId'> | undefined, playerId:
 /** Squad size of a team as fixed at match creation (supports uneven teams). */
 export function getTeamSize(match: Match, teamId: string): number {
   return match.config.teamSizes?.[teamId] ?? match.config.playersPerSide;
+}
+
+/**
+ * Add late-joining players to a team mid-match. The team's squad size grows with
+ * its roster so all-out / last-man-stands checks count the new players.
+ */
+export function addPlayersToTeam(match: Match, teamId: string, names: string[]): Match {
+  const team = match.teams.find((t) => t.id === teamId);
+  if (!team || names.length === 0) return match;
+  const players = [...team.players, ...names.map((name) => ({ id: uuid(), name, teamId }))];
+  const teams = match.teams.map((t) => (t.id === teamId ? { ...t, players } : t)) as Match['teams'];
+  const teamSizes = Object.fromEntries(teams.map((t) => [t.id, Math.max(getTeamSize(match, t.id), t.players.length)]));
+  return {
+    ...match,
+    teams,
+    config: { ...match.config, teamSizes, playersPerSide: Math.max(...Object.values(teamSizes)) },
+  };
 }
 
 /** Wickets needed to bowl out the given batting team. */
