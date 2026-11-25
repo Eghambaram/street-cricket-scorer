@@ -8,10 +8,6 @@ import {
   addPlayerToTeam,
   removePlayerFromTeam,
   updatePlayerInTeam,
-  resetPlayerBaseline,
-  resetTeamBaseline,
-  clearPlayerBaseline,
-  clearTeamBaseline,
 } from '@/db/repos/savedTeamRepo';
 
 interface TeamsState {
@@ -21,16 +17,13 @@ interface TeamsState {
   createTeam: (name: string) => Promise<SavedTeam>;
   updateTeam: (team: SavedTeam) => Promise<void>;
   removeTeam: (id: string) => Promise<void>;
-  addPlayer: (teamId: string, name: string, role?: PlayerRole, skillLevel?: SkillLevel) => Promise<void>;
+  /** Pass `id` to add an existing club player (same person in another squad). */
+  addPlayer: (teamId: string, name: string, role?: PlayerRole, skillLevel?: SkillLevel, id?: string) => Promise<void>;
   removePlayer: (teamId: string, playerId: string) => Promise<void>;
   updatePlayer: (teamId: string, playerId: string, updates: Partial<Pick<SavedPlayer, 'name' | 'role' | 'skillLevel'>>) => Promise<void>;
-  resetPlayerStats: (teamId: string, playerId: string) => Promise<void>;
-  resetTeamStats: (teamId: string) => Promise<void>;
-  clearPlayerStats: (teamId: string, playerId: string) => Promise<void>;
-  clearTeamStats: (teamId: string) => Promise<void>;
 }
 
-export const useTeamsStore = create<TeamsState>((set) => ({
+export const useTeamsStore = create<TeamsState>((set, get) => ({
   teams: [],
   loading: false,
 
@@ -64,8 +57,8 @@ export const useTeamsStore = create<TeamsState>((set) => ({
     set((s) => ({ teams: s.teams.filter((t) => t.id !== id) }));
   },
 
-  addPlayer: async (teamId: string, name: string, role?: PlayerRole, skillLevel?: SkillLevel) => {
-    const player: SavedPlayer = { id: uuid(), name: name.trim(), role, skillLevel };
+  addPlayer: async (teamId: string, name: string, role?: PlayerRole, skillLevel?: SkillLevel, id?: string) => {
+    const player: SavedPlayer = { id: id ?? uuid(), name: name.trim(), role, skillLevel };
     await addPlayerToTeam(teamId, player);
     set((s) => ({
       teams: s.teams.map((t) =>
@@ -87,64 +80,22 @@ export const useTeamsStore = create<TeamsState>((set) => ({
     }));
   },
 
+  // A player can sit in several squads under one id; a rename follows them
+  // everywhere so name matching and stats stay consistent.
   updatePlayer: async (teamId, playerId, updates) => {
-    await updatePlayerInTeam(teamId, playerId, updates);
+    const nameOnly = updates.name !== undefined ? { name: updates.name } : {};
+    const changesFor = (id: string) => (id === teamId ? updates : nameOnly);
+    const affected = get().teams.filter((t) => t.players.some((p) => p.id === playerId));
+    for (const t of affected) await updatePlayerInTeam(t.id, playerId, changesFor(t.id));
+    const now = Date.now();
     set((s) => ({
       teams: s.teams.map((t) =>
-        t.id === teamId
+        affected.some((a) => a.id === t.id)
           ? {
               ...t,
-              players: t.players.map((p) => (p.id === playerId ? { ...p, ...updates } : p)),
-              updatedAt: Date.now(),
+              players: t.players.map((p) => (p.id === playerId ? { ...p, ...changesFor(t.id) } : p)),
+              updatedAt: now,
             }
-          : t,
-      ),
-    }));
-  },
-
-  resetPlayerStats: async (teamId, playerId) => {
-    await resetPlayerBaseline(teamId, playerId);
-    const now = Date.now();
-    set((s) => ({
-      teams: s.teams.map((t) =>
-        t.id === teamId
-          ? { ...t, players: t.players.map((p) => p.id === playerId ? { ...p, statsBaselineAt: now } : p), updatedAt: now }
-          : t,
-      ),
-    }));
-  },
-
-  resetTeamStats: async (teamId) => {
-    await resetTeamBaseline(teamId);
-    const now = Date.now();
-    set((s) => ({
-      teams: s.teams.map((t) =>
-        t.id === teamId
-          ? { ...t, statsBaselineAt: now, players: t.players.map((p) => ({ ...p, statsBaselineAt: now })), updatedAt: now }
-          : t,
-      ),
-    }));
-  },
-
-  clearPlayerStats: async (teamId, playerId) => {
-    await clearPlayerBaseline(teamId, playerId);
-    const now = Date.now();
-    set((s) => ({
-      teams: s.teams.map((t) =>
-        t.id === teamId
-          ? { ...t, players: t.players.map((p) => p.id === playerId ? { ...p, statsBaselineAt: undefined } : p), updatedAt: now }
-          : t,
-      ),
-    }));
-  },
-
-  clearTeamStats: async (teamId) => {
-    await clearTeamBaseline(teamId);
-    const now = Date.now();
-    set((s) => ({
-      teams: s.teams.map((t) =>
-        t.id === teamId
-          ? { ...t, statsBaselineAt: undefined, players: t.players.map((p) => ({ ...p, statsBaselineAt: undefined })), updatedAt: now }
           : t,
       ),
     }));

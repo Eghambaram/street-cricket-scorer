@@ -24,7 +24,9 @@ import { Button } from '@/components/common/Button';
 import { useScoring } from '@/hooks/useScoring';
 import { useScoringStore } from '@/store/scoringStore';
 import { useMatch } from '@/hooks/useMatch';
+import { useTeams } from '@/hooks/useTeams';
 import { useUIStore } from '@/store/uiStore';
+import { buildRosterIndex } from '@/utils/roster';
 import { getMatch } from '@/db/repos/matchRepo';
 import { getMatchInnings, saveInnings } from '@/db/repos/inningsRepo';
 import { getInningsDeliveries } from '@/db/repos/playerRepo';
@@ -43,6 +45,10 @@ export default function ScoringPage() {
   const { score, undo, loadInnings, finaliseInnings, rotateStrike, changeBatsman, changeBowler, retireHurt, recallRetiredBatsman, toggleFreeHit, innings, match, stats, deliveries, lastDelivery, clear, selectNextBatsman } = useScoring();
   const { upsertMatch } = useMatch();
   const { addToast } = useUIStore();
+  // Club roster: late joiners who are regulars keep their roster id (stats count)
+  const { teams: savedTeams, loadTeams } = useTeams();
+  const roster = buildRosterIndex(savedTeams);
+  useEffect(() => { loadTeams(); }, [loadTeams]);
 
   const [loading, setLoading] = useState(true);
   const [showWicket, setShowWicket] = useState(false);
@@ -297,7 +303,7 @@ export default function ScoringPage() {
       addToast(`${name} already in bowling team`, 'info');
       return;
     }
-    const updatedMatch = addPlayersToTeam(match, innings.bowlingTeamId, [name]);
+    const updatedMatch = addPlayersToTeam(match, innings.bowlingTeamId, [name], roster.idForName);
     await upsertMatch(updatedMatch);
     await loadInnings(updatedMatch, innings);
     addToast(`${name} added to bowling team`, 'success');
@@ -753,7 +759,7 @@ export default function ScoringPage() {
                 };
                 let addedCount = 0;
                 for (const [teamId, names] of Object.entries(settingsNewPlayers)) {
-                  updatedMatch = addPlayersToTeam(updatedMatch, teamId, names);
+                  updatedMatch = addPlayersToTeam(updatedMatch, teamId, names, roster.idForName);
                   addedCount += names.length;
                 }
                 await upsertMatch(updatedMatch);

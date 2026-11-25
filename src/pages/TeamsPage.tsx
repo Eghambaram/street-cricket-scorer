@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 import {
   Users, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X,
-  Trophy, TrendingUp, TrendingDown, RotateCcw, Filter,
+  Trophy, TrendingUp, TrendingDown, Filter, CalendarDays, Info,
 } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button } from '@/components/common/Button';
@@ -11,10 +11,17 @@ import { Spinner } from '@/components/common/Spinner';
 import { PlayerStatsModal } from '@/components/teams/PlayerStatsModal';
 import { useTeams } from '@/hooks/useTeams';
 import { useUIStore } from '@/store/uiStore';
+import { useSeasonStore } from '@/store/seasonStore';
 import { cn } from '@/utils/cn';
 import { computeLeaderboard } from '@/utils/playerStats';
+import {
+  MIN_QUALIFYING_INNINGS, defaultSeasonRange, endOfDay, formatSeasonRange,
+  fromDateInput, getActiveSeason, toDateInput,
+} from '@/utils/season';
+import { buildRosterIndex } from '@/utils/roster';
 import type { LeaderboardEntry } from '@/utils/playerStats';
-import type { SavedTeam, SavedPlayer, PlayerRole, SkillLevel } from '@/types/player.types';
+import type { SavedTeam, SavedPlayer, PlayerRole } from '@/types/player.types';
+import type { Season } from '@/types/season.types';
 
 export type PlayerRole_ = PlayerRole;
 
@@ -40,32 +47,30 @@ const ROLE_ACTIVE: Record<PlayerRole, string> = {
 };
 
 const ROLES: PlayerRole[] = ['batsman', 'bowler', 'allrounder', 'wicketkeeper'];
-const SKILLS: SkillLevel[] = ['low', 'medium', 'high'];
-const SKILL_ICONS: Record<SkillLevel, string> = { low: '▁', medium: '▅', high: '█' };
-const SKILL_LABELS: Record<SkillLevel, string> = { low: 'Low', medium: 'Medium', high: 'High' };
-const SKILL_COLORS: Record<SkillLevel, string> = {
-  low: 'bg-muted/20 text-muted border border-white/10',
-  medium: 'bg-amber/20 text-amber border border-amber/40',
-  high: 'bg-safe/20 text-safe border border-safe/40',
-};
 
-const TIME_RANGES = [
-  { label: 'This Week', days: 7 },
-  { label: 'This Month', days: 30 },
-  { label: '3 Months', days: 90 },
-  { label: 'All Time', days: 0 },
-] as const;
+/** Big enough for a whole club roster in one squad. */
+const MAX_SQUAD = 100;
+
+/** Leaderboard scope: a season id, or every completed match. */
+const ALL_MATCHES = 'all';
+
+const qualifiedBat = (e: LeaderboardEntry) => e.stats.battingInnings >= MIN_QUALIFYING_INNINGS;
+const qualifiedBowl = (e: LeaderboardEntry) => e.stats.bowlingInnings >= MIN_QUALIFYING_INNINGS;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TeamsPage() {
   const { teams, loading, loadTeams, removeTeam } = useTeams();
+  const { seasons, loaded: seasonsLoaded, loadSeasons } = useSeasonStore();
   const { addToast } = useUIStore();
 
   const [activeTab, setActiveTab] = useState<'squads' | 'leaderboard'>('squads');
-  const [viewingStatsPlayer, setViewingStatsPlayer] = useState<{
-    id: string; name: string; baseline?: number; teamId?: string;
-  } | null>(null);
+  const [viewingStatsPlayer, setViewingStatsPlayer] = useState<{ id: string; name: string } | null>(null);
+  // Defaults to the running season once seasons load
+  const [scope, setScope] = useState<string | null>(null);
+  const activeSeason = getActiveSeason(seasons);
+  const resolvedScope = scope ?? activeSeason?.id ?? seasons[0]?.id ?? ALL_MATCHES;
+  const scopeSeason = seasons.find((s) => s.id === resolvedScope);
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
   const [showNewTeamModal, setShowNewTeamModal] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
@@ -74,7 +79,7 @@ export default function TeamsPage() {
 
   const { createTeam } = useTeams();
 
-  useEffect(() => { loadTeams(); }, [loadTeams]);
+  useEffect(() => { loadTeams(); loadSeasons(); }, [loadTeams, loadSeasons]);
 
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
@@ -102,9 +107,23 @@ export default function TeamsPage() {
     }
   };
 
-  const totalPlayers = teams.reduce((s, t) => s + t.players.length, 0);
+  // Unique club players — the same player can be saved in several squads
+  const totalPlayers = new Set(teams.flatMap((t) => t.players.map((p) => p.id))).size;
 
-  if (loading) {
+  // Same name saved as different players: stats split and name matching guesses
+  const nameClashes = (() => {
+    const byName = new Map<string, { name: string; ids: Set<string>; teams: Set<string> }>();
+    for (const t of teams) for (const p of t.players) {
+      const k = p.name.trim().toLowerCase();
+      const entry = byName.get(k) ?? { name: p.name.trim(), ids: new Set<string>(), teams: new Set<string>() };
+      entry.ids.add(p.id);
+      entry.teams.add(t.name);
+      byName.set(k, entry);
+    }
+    return [...byName.values()].filter((e) => e.ids.size > 1);
+  })();
+
+  if (loading || !seasonsLoaded) {
     return (
       <div className="min-h-screen bg-pitch flex items-center justify-center">
         <Spinner />
@@ -139,11 +158,7 @@ export default function TeamsPage() {
         <div className="shrink-0 flex gap-0 border-b border-white/[0.06]">
           <SummaryPill value={teams.length} label="Teams" />
           <SummaryPill value={totalPlayers} label="Players" />
-          <SummaryPill
-            value={teams.reduce((s, t) => s + t.players.filter((p) => !!p.statsBaselineAt).length, 0) > 0 ? 'Active' : '—'}
-            label="Tournament"
-            accent
-          />
+          <SummaryPill value={activeSeason?.name ?? '—'} label="Season" accent />
         </div>
       )}
 
@@ -167,6 +182,18 @@ export default function TeamsPage() {
       <div className="flex-1 min-h-0">
         {activeTab === 'squads' ? (
           <div className="px-4 py-4 space-y-3 pb-28">
+            {nameClashes.length > 0 && (
+              <div className="rounded-2xl bg-amber/10 border border-amber/30 px-4 py-3 space-y-1">
+                <p className="text-amber text-sm font-bold">Same name, different players</p>
+                <p className="text-muted text-xs leading-relaxed">
+                  {nameClashes.map((c) => `${c.name} (${[...c.teams].join(', ')})`).join(' · ')}
+                </p>
+                <p className="text-muted text-[11px] leading-relaxed">
+                  Their stats are kept separately. If it is one person, remove the extra copy and add them
+                  again — a new player with an existing name is linked to the same person.
+                </p>
+              </div>
+            )}
             {teams.length === 0 ? (
               <EmptyState onNew={() => setShowNewTeamModal(true)} />
             ) : (
@@ -177,12 +204,7 @@ export default function TeamsPage() {
                   isExpanded={expandedTeamId === team.id}
                   onToggle={() => setExpandedTeamId(expandedTeamId === team.id ? null : team.id)}
                   onDeleteTeam={() => setDeleteTeamId(team.id)}
-                  onViewStats={(p) => setViewingStatsPlayer({
-                    id: p.id,
-                    name: p.name,
-                    baseline: p.statsBaselineAt ?? team.statsBaselineAt,
-                    teamId: team.id,
-                  })}
+                  onViewStats={(p) => setViewingStatsPlayer({ id: p.id, name: p.name })}
                 />
               ))
             )}
@@ -190,9 +212,10 @@ export default function TeamsPage() {
         ) : (
           <LeaderboardTab
             teams={teams}
-            onViewStats={(id, name, baseline, teamId) =>
-              setViewingStatsPlayer({ id, name, baseline, teamId })
-            }
+            seasons={seasons}
+            scope={resolvedScope}
+            onScopeChange={setScope}
+            onViewStats={(id, name) => setViewingStatsPlayer({ id, name })}
           />
         )}
       </div>
@@ -231,8 +254,8 @@ export default function TeamsPage() {
           isOpen
           playerId={viewingStatsPlayer.id}
           playerName={viewingStatsPlayer.name}
-          statsBaselineAt={viewingStatsPlayer.baseline}
-          teamId={viewingStatsPlayer.teamId}
+          seasonId={scopeSeason?.id}
+          seasonName={scopeSeason?.name}
           onClose={() => setViewingStatsPlayer(null)}
         />
       )}
@@ -240,7 +263,8 @@ export default function TeamsPage() {
       {/* Delete Confirmation Modal */}
       <Modal isOpen={!!deleteTeamId} onClose={() => setDeleteTeamId(null)} title="Delete Team?">
         <p className="text-muted text-sm text-center mb-6">
-          This removes the saved team roster. Your match history is not affected.
+          This removes the saved squad. Match history and stats data are kept, but players who are
+          only in this squad will no longer appear on the leaderboard.
         </p>
         <div className="flex gap-3">
           <Button variant="secondary" size="lg" fullWidth onClick={() => setDeleteTeamId(null)}>
@@ -291,77 +315,48 @@ function TabPill({ label, icon, active, onClick }: {
 
 function LeaderboardTab({
   teams,
+  seasons,
+  scope,
+  onScopeChange,
   onViewStats,
 }: {
   teams: SavedTeam[];
-  onViewStats: (id: string, name: string, baseline?: number, teamId?: string) => void;
+  seasons: Season[];
+  scope: string;
+  onScopeChange: (scope: string) => void;
+  onViewStats: (id: string, name: string) => void;
 }) {
-  const [rangeIdx, setRangeIdx] = useState(2);
   const [mode, setMode] = useState<'batting' | 'bowling'>('batting');
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [matchCount, setMatchCount] = useState(0);
   const [loadingLb, setLoadingLb] = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [editingSeason, setEditingSeason] = useState<Season | 'new' | null>(null);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
-  const { resetTeamStats, clearTeamStats } = useTeams();
-  const { addToast } = useUIStore();
-
+  const season = seasons.find((s) => s.id === scope);
   const selectedTeam = selectedTeamId ? teams.find((t) => t.id === selectedTeamId) ?? null : null;
-  const tournamentActive = selectedTeam
-    ? selectedTeam.players.some((p) => !!p.statsBaselineAt)
-    : false;
+  const filteredTeams = selectedTeam ? [selectedTeam] : teams;
 
-  const filteredTeams = selectedTeamId ? teams.filter((t) => t.id === selectedTeamId) : teams;
-
-  const allPlayers = filteredTeams.flatMap((t) =>
-    t.players.map((p) => ({
-      playerId: p.id,
-      playerName: p.name,
-      teamName: t.name,
-      teamId: t.id,
-      statsBaselineAt: p.statsBaselineAt ?? t.statsBaselineAt,
-    })),
-  );
+  // One entry per player: the same roster player may be saved in several teams
+  const allPlayers = [...new Map(
+    filteredTeams.flatMap((t) => t.players.map((p) => [p.id, { playerId: p.id, playerName: p.name, teamName: t.name }] as const)),
+  ).values()];
 
   const load = useCallback(async () => {
-    if (allPlayers.length === 0) { setEntries([]); return; }
+    if (allPlayers.length === 0) { setEntries([]); setMatchCount(0); return; }
     setLoadingLb(true);
-    const days = TIME_RANGES[rangeIdx].days;
-    const since = days > 0 ? Date.now() - days * 86_400_000 : undefined;
     try {
-      const result = await computeLeaderboard(allPlayers, since);
-      setEntries(result);
+      const result = await computeLeaderboard(allPlayers, season?.id);
+      setEntries(result.entries);
+      setMatchCount(result.matchCount);
     } finally {
       setLoadingLb(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeIdx, selectedTeamId, teams]);
+  }, [scope, selectedTeamId, teams]);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleStartTournament = async () => {
-    if (!selectedTeamId || !selectedTeam) return;
-    try {
-      await resetTeamStats(selectedTeamId);
-      addToast(`${selectedTeam.name} — new tournament started! 🏆`, 'success');
-      setShowResetConfirm(false);
-      load();
-    } catch {
-      addToast('Failed to reset', 'error');
-    }
-  };
-
-  const handleShowAllTime = async () => {
-    if (!selectedTeamId || !selectedTeam) return;
-    try {
-      await clearTeamStats(selectedTeamId);
-      addToast('Showing all-time stats', 'info');
-      setShowResetConfirm(false);
-      load();
-    } catch {
-      addToast('Failed to clear', 'error');
-    }
-  };
 
   const totalPlayers = teams.reduce((s, t) => s + t.players.length, 0);
   if (totalPlayers === 0) {
@@ -374,81 +369,129 @@ function LeaderboardTab({
     );
   }
 
+  // Volume first (runs / wickets); qualified players win ties on average / economy
   const sorted = [...entries].sort((a, b) => {
     if (mode === 'batting') {
       if (b.stats.totalRuns !== a.stats.totalRuns) return b.stats.totalRuns - a.stats.totalRuns;
+      if (qualifiedBat(a) !== qualifiedBat(b)) return qualifiedBat(a) ? -1 : 1;
       return b.stats.battingAverage - a.stats.battingAverage;
-    } else {
-      if (b.stats.wickets !== a.stats.wickets) return b.stats.wickets - a.stats.wickets;
-      if (a.stats.economy === 0 && b.stats.economy === 0) return 0;
-      if (a.stats.economy === 0) return 1;
-      if (b.stats.economy === 0) return -1;
-      return a.stats.economy - b.stats.economy;
     }
+    if (b.stats.wickets !== a.stats.wickets) return b.stats.wickets - a.stats.wickets;
+    if (qualifiedBowl(a) !== qualifiedBowl(b)) return qualifiedBowl(a) ? -1 : 1;
+    if (a.stats.economy === 0 && b.stats.economy === 0) return 0;
+    if (a.stats.economy === 0) return 1;
+    if (b.stats.economy === 0) return -1;
+    return a.stats.economy - b.stats.economy;
   });
 
-  const hasAnyData = sorted.some((e) =>
+  // Only players who have batted / bowled in scope are ranked
+  const ranked = sorted.filter((e) =>
     mode === 'batting' ? e.stats.battingInnings > 0 : e.stats.bowlingInnings > 0,
   );
-
-  const globalTournamentActive = allPlayers.some((p) => p.statsBaselineAt);
+  const hasAnyData = ranked.length > 0;
+  const notYetCount = sorted.length - ranked.length;
 
   return (
     <div className="pb-28">
 
-      {/* ── Team filter chips (only when multiple teams) ── */}
-      {teams.length > 1 && (
-        <div className="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto no-scrollbar">
+      {/* ── Season chips ── */}
+      <div className="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto no-scrollbar">
+        {seasons.map((s) => (
           <button
-            onClick={() => { setSelectedTeamId(null); setShowResetConfirm(false); }}
+            key={s.id}
+            onClick={() => onScopeChange(s.id)}
             className={cn(
               'shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all',
-              !selectedTeamId
-                ? 'bg-gold text-pitch-dark shadow-sm'
-                : 'bg-pitch-light text-muted hover:text-white',
+              scope === s.id ? 'bg-gold text-pitch-dark shadow-sm' : 'bg-pitch-light text-muted hover:text-white',
             )}
           >
-            <Users size={11} />All Teams
-          </button>
-          {teams.map((t) => {
-            const isActive = selectedTeamId === t.id;
-            const hasTournament = t.players.some((p) => !!p.statsBaselineAt);
-            return (
-              <button
-                key={t.id}
-                onClick={() => { setSelectedTeamId(isActive ? null : t.id); setShowResetConfirm(false); }}
-                className={cn(
-                  'shrink-0 flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all',
-                  isActive
-                    ? 'bg-gold text-pitch-dark shadow-sm'
-                    : 'bg-pitch-light text-muted hover:text-white',
-                )}
-              >
-                {t.name}
-                {hasTournament && <span className="opacity-80">🏆</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Time range chips ── */}
-      <div className={cn('flex gap-2 px-4 overflow-x-auto no-scrollbar pb-2', teams.length > 1 ? 'pt-2' : 'pt-3')}>
-        {TIME_RANGES.map((r, i) => (
-          <button
-            key={r.label}
-            onClick={() => setRangeIdx(i)}
-            className={cn(
-              'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all',
-              rangeIdx === i
-                ? 'bg-gold/20 text-gold border border-gold/40'
-                : 'bg-pitch-light text-muted hover:text-white',
-            )}
-          >
-            {r.label}
+            <Trophy size={11} />{s.name}
           </button>
         ))}
+        <button
+          onClick={() => onScopeChange(ALL_MATCHES)}
+          className={cn(
+            'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all',
+            scope === ALL_MATCHES ? 'bg-gold text-pitch-dark shadow-sm' : 'bg-pitch-light text-muted hover:text-white',
+          )}
+        >
+          All matches
+        </button>
+        <button
+          onClick={() => setEditingSeason('new')}
+          className="shrink-0 flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-bold border border-dashed border-gold/40 text-gold hover:bg-gold/10 transition-all"
+        >
+          <Plus size={11} />Season
+        </button>
       </div>
+
+      {/* ── Scope summary: what is being counted ── */}
+      <div className="mx-4 mt-2 mb-3 flex items-center gap-2 px-3 py-2.5 rounded-xl bg-pitch-light border border-white/[0.06]">
+        <CalendarDays size={14} className="text-gold shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-xs font-bold truncate">
+            {season ? `${season.name} · ${formatSeasonRange(season)}` : 'All completed matches (season + casual)'}
+          </p>
+          <p className="text-muted text-[10px]">
+            {loadingLb ? 'Counting…' : `${matchCount} match${matchCount !== 1 ? 'es' : ''} counted`}
+          </p>
+        </div>
+        {season && (
+          <button
+            onClick={() => setEditingSeason(season)}
+            className="text-muted hover:text-gold p-1.5 rounded-lg transition-colors shrink-0"
+            aria-label="Edit season"
+          >
+            <Edit2 size={13} />
+          </button>
+        )}
+        <button
+          onClick={() => setShowHowItWorks(true)}
+          className="text-muted hover:text-gold p-1.5 rounded-lg transition-colors shrink-0"
+          aria-label="How stats work"
+        >
+          <Info size={14} />
+        </button>
+      </div>
+
+      {seasons.length === 0 && (
+        <button
+          onClick={() => setEditingSeason('new')}
+          className="mx-4 mb-3 w-[calc(100%-2rem)] text-left px-3 py-2.5 rounded-xl bg-gold/10 border border-gold/30"
+        >
+          <p className="text-gold text-sm font-bold">Start your first season</p>
+          <p className="text-muted text-[11px] leading-snug">
+            Pick a start and end date. Only matches marked for the season will count on its leaderboard.
+          </p>
+        </button>
+      )}
+
+      {/* ── Team filter chips (only when multiple teams) ── */}
+      {teams.length > 1 && (
+        <div className="flex gap-2 px-4 pb-2 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setSelectedTeamId(null)}
+            className={cn(
+              'shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-all',
+              !selectedTeamId ? 'bg-gold/20 text-gold border border-gold/40' : 'bg-pitch-light text-muted hover:text-white',
+            )}
+          >
+            <Users size={11} />All players
+          </button>
+          {teams.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setSelectedTeamId(selectedTeamId === t.id ? null : t.id)}
+              className={cn(
+                'shrink-0 px-3 py-1 rounded-full text-[11px] font-bold transition-all',
+                selectedTeamId === t.id ? 'bg-gold/20 text-gold border border-gold/40' : 'bg-pitch-light text-muted hover:text-white',
+              )}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── Batting / Bowling toggle ── */}
       <div className="flex mx-4 mb-3 bg-pitch-light rounded-xl p-1">
@@ -472,106 +515,185 @@ function LeaderboardTab({
         </button>
       </div>
 
-      {/* ── Per-team tournament / reset section ── */}
-      {selectedTeam && (
-        <div className="mx-4 mb-3">
-          {!showResetConfirm ? (
-            <button
-              onClick={() => setShowResetConfirm(true)}
-              className={cn(
-                'w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors',
-                tournamentActive
-                  ? 'bg-safe/15 text-safe border border-safe/30 hover:bg-safe/20'
-                  : 'bg-pitch-light text-muted hover:text-white border border-dashed border-white/10',
-              )}
-            >
-              <RotateCcw size={14} className="shrink-0" />
-              <div className="text-left">
-                <p className="leading-tight">
-                  {tournamentActive
-                    ? `${selectedTeam.name} — Tournament in progress`
-                    : `New Tournament for ${selectedTeam.name}`}
-                </p>
-                <p className="text-[10px] font-normal opacity-70 leading-tight">
-                  {tournamentActive
-                    ? 'Tap to reset stats for a new tournament'
-                    : 'Reset stats to track this tournament only'}
-                </p>
-              </div>
-            </button>
-          ) : (
-            <div className="bg-pitch rounded-xl border border-safe/30 px-4 py-3 space-y-2.5">
-              <p className="text-white text-sm font-bold">New tournament for {selectedTeam.name}?</p>
-              <p className="text-muted text-xs leading-relaxed">
-                Stats will count from today. Full match history is never deleted.
-              </p>
-              <div className="flex gap-2">
-                <Button variant="secondary" size="sm" fullWidth onClick={() => setShowResetConfirm(false)}>
-                  Cancel
-                </Button>
-                {tournamentActive && (
-                  <Button variant="secondary" size="sm" fullWidth onClick={handleShowAllTime}>
-                    All-Time
-                  </Button>
-                )}
-                <Button variant="gold" size="sm" fullWidth onClick={handleStartTournament}>
-                  🏆 Start
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Global tournament notice when no team selected ── */}
-      {!selectedTeam && globalTournamentActive && (
-        <div className="mx-4 mb-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-safe/15 border border-safe/30">
-          <Trophy size={13} className="text-safe shrink-0" />
-          <p className="text-safe text-xs font-semibold">
-            {teams.length > 1
-              ? 'Some teams have tournament stats active · Filter by team to manage'
-              : 'Tournament stats active · Go to Squads to manage'}
-          </p>
-        </div>
-      )}
-
       {loadingLb ? (
         <div className="flex justify-center py-12"><Spinner /></div>
       ) : !hasAnyData ? (
-        <NoDataState mode={mode} range={TIME_RANGES[rangeIdx].label} />
+        <NoDataState mode={mode} range={season?.name ?? 'all matches'} />
       ) : (
         <>
-          <Podium entries={sorted} mode={mode} onViewStats={onViewStats} />
+          <Podium entries={ranked} mode={mode} onViewStats={onViewStats} />
           <div className="px-4 mt-4 space-y-2">
             <div className="flex items-center justify-between mb-3">
               <p className="text-muted text-[11px] font-bold uppercase tracking-wider">
                 {selectedTeam ? selectedTeam.name : 'All Players'}
               </p>
-              {selectedTeam && (
-                <div className="flex items-center gap-1 text-muted/60 text-[10px]">
-                  <Filter size={10} />
-                  <span>{selectedTeam.players.length} players</span>
-                </div>
-              )}
+              <div className="flex items-center gap-1 text-muted/60 text-[10px]">
+                <Filter size={10} />
+                <span>{mode === 'batting' ? 'Avg' : 'Econ'} after {MIN_QUALIFYING_INNINGS} inns</span>
+              </div>
             </div>
-            {sorted.map((entry, idx) => (
+            {ranked.map((entry, idx) => (
               <RankRow
                 key={entry.playerId}
                 rank={idx + 1}
                 entry={entry}
                 mode={mode}
-                onViewStats={() => onViewStats(
-                  entry.playerId,
-                  entry.playerName,
-                  entry.statsBaselineAt,
-                  (entry as LeaderboardEntry & { teamId?: string }).teamId,
-                )}
+                onViewStats={() => onViewStats(entry.playerId, entry.playerName)}
               />
             ))}
+            {notYetCount > 0 && (
+              <p className="text-muted/60 text-[11px] text-center pt-2">
+                {notYetCount} player{notYetCount !== 1 ? 's' : ''} yet to {mode === 'batting' ? 'bat' : 'bowl'} in {season?.name ?? 'these matches'}
+              </p>
+            )}
           </div>
         </>
       )}
+
+      {editingSeason && (
+        <SeasonModal
+          season={editingSeason === 'new' ? null : editingSeason}
+          nextNumber={seasons.length + 1}
+          onSaved={(id) => { setEditingSeason(null); onScopeChange(id); }}
+          onDeleted={() => { setEditingSeason(null); onScopeChange(ALL_MATCHES); }}
+          onClose={() => setEditingSeason(null)}
+        />
+      )}
+
+      <Modal isOpen={showHowItWorks} onClose={() => setShowHowItWorks(false)} title="How stats work">
+        <HowStatsWork />
+      </Modal>
     </div>
+  );
+}
+
+// ─── HowStatsWork ─────────────────────────────────────────────────────────────
+
+function HowStatsWork() {
+  const steps = [
+    ['Club roster', 'Every regular player is saved once under Teams. Pick players from the roster (or type the exact same name) so the app knows it is the same person every match.'],
+    ['Season', 'A season has a start and end date. While it runs, new matches have “Counts for season stats” switched on.'],
+    ['Casual games', 'Switch that off for fun games. You can change it later from the match summary if you get it wrong.'],
+    ['What counts', 'Only completed matches marked for the season. Abandoned and unfinished matches never count. Undo corrections are picked up automatically.'],
+    ['Guests', 'Players not on the roster can play, but their stats are not kept.'],
+    ['Rankings', `Ordered by runs (batting) or wickets (bowling). Averages and economy show after ${MIN_QUALIFYING_INNINGS} innings so one good knock does not top the table.`],
+  ] as const;
+  return (
+    <ol className="space-y-3 pb-1">
+      {steps.map(([title, body], i) => (
+        <li key={title} className="flex gap-3">
+          <span className="w-6 h-6 rounded-full bg-gold/20 text-gold text-xs font-black flex items-center justify-center shrink-0">{i + 1}</span>
+          <div>
+            <p className="text-white text-sm font-bold leading-tight">{title}</p>
+            <p className="text-muted text-xs leading-relaxed mt-0.5">{body}</p>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ─── SeasonModal ──────────────────────────────────────────────────────────────
+
+function SeasonModal({
+  season,
+  nextNumber,
+  onSaved,
+  onDeleted,
+  onClose,
+}: {
+  season: Season | null;
+  nextNumber: number;
+  onSaved: (id: string) => void;
+  onDeleted: () => void;
+  onClose: () => void;
+}) {
+  const { createSeason, updateSeason, removeSeason } = useSeasonStore();
+  const { addToast } = useUIStore();
+  const defaults = defaultSeasonRange();
+  const [name, setName] = useState(season?.name ?? `Season ${nextNumber}`);
+  const [start, setStart] = useState(toDateInput(season?.startAt ?? defaults.startAt));
+  const [end, setEnd] = useState(toDateInput(season?.endAt ?? defaults.endAt));
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim() || !start || !end) return;
+    const startAt = fromDateInput(start);
+    const endAt = endOfDay(fromDateInput(end));
+    if (endAt <= startAt) { addToast('End date must be after the start date', 'error'); return; }
+    try {
+      if (season) {
+        await updateSeason({ ...season, name: name.trim(), startAt, endAt });
+        addToast('Season updated', 'success');
+        onSaved(season.id);
+      } else {
+        const created = await createSeason(name, startAt, endAt);
+        addToast(`${created.name} started 🏆`, 'success');
+        onSaved(created.id);
+      }
+    } catch {
+      addToast('Failed to save season', 'error');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!season) return;
+    try {
+      await removeSeason(season.id);
+      addToast(`${season.name} deleted — its matches are now casual`, 'info');
+      onDeleted();
+    } catch {
+      addToast('Failed to delete season', 'error');
+    }
+  };
+
+  const inputCls = 'w-full bg-pitch border border-pitch-light rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-gold/50';
+
+  return (
+    <Modal isOpen onClose={onClose} title={season ? 'Edit Season' : 'New Season'}>
+      <div className="space-y-4">
+        <div>
+          <label className="text-xs text-muted font-semibold">Name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} className={cn(inputCls, 'mt-1')} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-muted font-semibold">Starts</label>
+            <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={cn(inputCls, 'mt-1 px-3')} />
+          </div>
+          <div>
+            <label className="text-xs text-muted font-semibold">Ends</label>
+            <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className={cn(inputCls, 'mt-1 px-3')} />
+          </div>
+        </div>
+        <p className="text-muted text-[11px] leading-relaxed">
+          New matches during these dates are marked for this season by default. Dates only set the default —
+          a match counts because it is marked, so editing dates never moves old matches.
+        </p>
+        {season && (
+          confirmDelete ? (
+            <div className="bg-wicket/10 border border-wicket/30 rounded-xl p-3 space-y-2">
+              <p className="text-white text-sm font-bold">Delete {season.name}?</p>
+              <p className="text-muted text-xs">Its matches stay saved and become casual matches.</p>
+              <div className="flex gap-2">
+                <Button variant="secondary" size="sm" fullWidth onClick={() => setConfirmDelete(false)}>Keep</Button>
+                <Button variant="danger" size="sm" fullWidth onClick={handleDelete}>Delete</Button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setConfirmDelete(true)} className="text-wicket text-xs font-semibold">
+              Delete season
+            </button>
+          )
+        )}
+        <div className="flex gap-3">
+          <Button variant="secondary" size="lg" fullWidth onClick={onClose}>Cancel</Button>
+          <Button variant="gold" size="lg" fullWidth disabled={!name.trim()} onClick={handleSave}>
+            {season ? 'Save' : 'Start Season'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -584,7 +706,7 @@ function Podium({
 }: {
   entries: LeaderboardEntry[];
   mode: 'batting' | 'bowling';
-  onViewStats: (id: string, name: string, baseline?: number, teamId?: string) => void;
+  onViewStats: (id: string, name: string) => void;
 }) {
   const active = entries.filter((e) =>
     mode === 'batting' ? e.stats.battingInnings > 0 : e.stats.bowlingInnings > 0,
@@ -596,16 +718,14 @@ function Podium({
   const primaryLabel = mode === 'batting' ? 'Runs' : 'Wickets';
   const secondaryStat = (e: LeaderboardEntry) =>
     mode === 'batting'
-      ? `Avg ${e.stats.battingAverage}`
-      : e.stats.economy > 0 ? `Econ ${e.stats.economy}` : '—';
-
-  const teamId = (e: LeaderboardEntry) => (e as LeaderboardEntry & { teamId?: string }).teamId;
+      ? qualifiedBat(e) ? `Avg ${e.stats.battingAverage}` : `${e.stats.battingInnings} inns`
+      : qualifiedBowl(e) && e.stats.economy > 0 ? `Econ ${e.stats.economy}` : `${e.stats.bowlingInnings} inns`;
 
   return (
     <div className="mx-4 mt-2">
       {first && (
         <button
-          onClick={() => onViewStats(first.playerId, first.playerName, first.statsBaselineAt, teamId(first))}
+          onClick={() => onViewStats(first.playerId, first.playerName)}
           className="w-full rounded-2xl overflow-hidden mb-3 text-left active:scale-[0.98] transition-transform"
         >
           <div className="relative bg-gradient-to-br from-gold/30 via-gold/15 to-transparent border border-gold/40 rounded-2xl px-5 py-4">
@@ -638,7 +758,7 @@ function Podium({
                   </>
                 ) : (
                   <>
-                    <MiniStat label="Econ" value={first.stats.economy > 0 ? first.stats.economy : '—'} />
+                    <MiniStat label="Econ" value={qualifiedBowl(first) && first.stats.economy > 0 ? first.stats.economy : '—'} />
                     <MiniStat label="Best" value={first.stats.bestBowlingWickets > 0 ? `${first.stats.bestBowlingWickets}/${first.stats.bestBowlingRuns}` : '—'} />
                     <MiniStat label="Mdns" value={first.stats.maidens} />
                   </>
@@ -646,7 +766,8 @@ function Podium({
               </div>
             </div>
             <p className="text-gold/50 text-[10px] mt-2 font-semibold">
-              {first.stats.matches} match{first.stats.matches !== 1 ? 'es' : ''} · {first.stats.battingInnings} inn
+              {first.stats.matches} match{first.stats.matches !== 1 ? 'es' : ''} · {mode === 'batting' ? first.stats.battingInnings : first.stats.bowlingInnings} inn
+              {mode === 'batting' && qualifiedBat(first) && ` · Avg ${first.stats.battingAverage}`}
             </p>
           </div>
         </button>
@@ -658,7 +779,7 @@ function Podium({
             e ? (
               <button
                 key={e.playerId}
-                onClick={() => onViewStats(e.playerId, e.playerName, e.statsBaselineAt, teamId(e))}
+                onClick={() => onViewStats(e.playerId, e.playerName)}
                 className="rounded-2xl text-left active:scale-[0.97] transition-transform"
               >
                 <div className="h-full relative rounded-2xl px-4 py-3.5 border bg-pitch-light border-white/10 overflow-hidden">
@@ -744,7 +865,7 @@ function RankRow({ rank, entry, mode, onViewStats }: {
             </div>
             <div className="text-right">
               <p className="text-muted text-xs font-semibold leading-tight">
-                {entry.stats.economy > 0 ? entry.stats.economy : '—'}
+                {qualifiedBowl(entry) && entry.stats.economy > 0 ? entry.stats.economy : '—'}
               </p>
               <p className="text-muted/60 text-[10px]">econ</p>
             </div>
@@ -819,9 +940,10 @@ interface TeamCardProps {
 }
 
 function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: TeamCardProps) {
-  const { updateTeam, addPlayer, removePlayer, updatePlayer, resetTeamStats, clearTeamStats } = useTeams();
+  const { teams, updateTeam, addPlayer, removePlayer, updatePlayer } = useTeams();
   const { addToast } = useUIStore();
   const cardRef = useRef<HTMLDivElement>(null);
+  const roster = buildRosterIndex(teams);
 
   useEffect(() => {
     if (isExpanded)
@@ -833,14 +955,11 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
   const [addingPlayer, setAddingPlayer] = useState(false);
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerRole, setNewPlayerRole] = useState<PlayerRole | undefined>(undefined);
-  const [newPlayerSkill, setNewPlayerSkill] = useState<SkillLevel>('medium');
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [editPlayerName, setEditPlayerName] = useState('');
   const [editPlayerRole, setEditPlayerRole] = useState<PlayerRole | undefined>(undefined);
-  const [editPlayerSkill, setEditPlayerSkill] = useState<SkillLevel>('medium');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const pendingDeleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showTournamentReset, setShowTournamentReset] = useState(false);
 
   const isDupeName = (name: string, excludeId?: string) =>
     team.players.some((p) => p.id !== excludeId && p.name.trim().toLowerCase() === name.trim().toLowerCase());
@@ -858,14 +977,18 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
 
   const handleAddPlayer = async () => {
     if (!newPlayerName.trim()) return;
-    if (team.players.length >= 50) { addToast('Maximum 50 players per team', 'warning'); return; }
+    if (team.players.length >= MAX_SQUAD) { addToast(`Maximum ${MAX_SQUAD} players per team`, 'warning'); return; }
     if (isDupeName(newPlayerName)) { addToast(`${newPlayerName.trim()} is already in this team`, 'warning'); return; }
+    // Same name already in another squad = the same club player, so share the id
+    const existingId = roster.idForName(newPlayerName);
     try {
-      await addPlayer(team.id, newPlayerName, newPlayerRole, newPlayerSkill);
-      addToast(`${newPlayerName.trim()} added`, 'success');
+      await addPlayer(team.id, newPlayerName, newPlayerRole, undefined, existingId);
+      addToast(
+        existingId ? `${newPlayerName.trim()} added — same player as in other squads` : `${newPlayerName.trim()} added`,
+        'success',
+      );
       setNewPlayerName('');
       setNewPlayerRole(undefined);
-      setNewPlayerSkill('medium');
       setAddingPlayer(false);
     } catch {
       addToast('Failed to add player', 'error');
@@ -875,8 +998,11 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
   const handleSavePlayer = async (playerId: string) => {
     if (!editPlayerName.trim()) return;
     if (isDupeName(editPlayerName, playerId)) { addToast(`${editPlayerName.trim()} is already in this team`, 'warning'); return; }
+    // Two different club players with one name would make name matching ambiguous
+    const owner = roster.idForName(editPlayerName);
+    if (owner && owner !== playerId) { addToast(`Another club player is already called ${editPlayerName.trim()}`, 'warning'); return; }
     try {
-      await updatePlayer(team.id, playerId, { name: editPlayerName.trim(), role: editPlayerRole, skillLevel: editPlayerSkill });
+      await updatePlayer(team.id, playerId, { name: editPlayerName.trim(), role: editPlayerRole });
       setEditingPlayerId(null);
     } catch {
       addToast('Failed to update player', 'error');
@@ -895,31 +1021,6 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
       pendingDeleteTimer.current = setTimeout(() => setPendingDeleteId(null), 3000);
     }
   };
-
-  const handleStartTournament = async () => {
-    try {
-      await resetTeamStats(team.id);
-      addToast(`${team.name} — new tournament started! 🏆`, 'success');
-      setShowTournamentReset(false);
-    } catch {
-      addToast('Failed to reset', 'error');
-    }
-  };
-
-  const handleShowAllTime = async () => {
-    try {
-      await clearTeamStats(team.id);
-      addToast('Showing all-time stats', 'info');
-      setShowTournamentReset(false);
-    } catch {
-      addToast('Failed to clear', 'error');
-    }
-  };
-
-  const tournamentActive = team.players.some((p) => !!p.statsBaselineAt);
-  const tournamentDate = tournamentActive
-    ? team.players.find((p) => p.statsBaselineAt)?.statsBaselineAt
-    : null;
 
   const roleCounts = team.players.reduce<Record<string, number>>((acc, p) => {
     const r = p.role ?? 'unassigned';
@@ -978,11 +1079,6 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
                   {count} {ROLE_LABELS[role as PlayerRole]}
                 </span>
               ))}
-            {tournamentActive && tournamentDate && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-safe/20 text-safe border border-safe/30">
-                🏆 From {new Date(tournamentDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-              </span>
-            )}
           </div>
         </div>
 
@@ -1011,12 +1107,10 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
               isEditing={editingPlayerId === player.id}
               editName={editPlayerName}
               editRole={editPlayerRole}
-              editSkill={editPlayerSkill}
               pendingDelete={pendingDeleteId === player.id}
-              onStartEdit={() => { setEditingPlayerId(player.id); setEditPlayerName(player.name); setEditPlayerRole(player.role); setEditPlayerSkill(player.skillLevel ?? 'medium'); }}
+              onStartEdit={() => { setEditingPlayerId(player.id); setEditPlayerName(player.name); setEditPlayerRole(player.role); }}
               onChangeName={setEditPlayerName}
               onChangeRole={setEditPlayerRole}
-              onChangeSkill={setEditPlayerSkill}
               onSave={() => handleSavePlayer(player.id)}
               onCancel={() => setEditingPlayerId(null)}
               onRemove={() => handleRemovePlayer(player.id)}
@@ -1046,13 +1140,6 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
                   </button>
                 ))}
               </div>
-              <div className="flex gap-1.5 flex-wrap">
-                {SKILLS.map((lv) => (
-                  <button key={lv} onClick={() => setNewPlayerSkill(lv)} className={cn('px-2.5 py-1 rounded-lg text-xs font-bold transition-colors', newPlayerSkill === lv ? SKILL_COLORS[lv] : 'bg-pitch-light text-muted hover:text-white')}>
-                    {SKILL_ICONS[lv]} Skill
-                  </button>
-                ))}
-              </div>
               <div className="flex gap-2">
                 <Button variant="secondary" size="sm" fullWidth
                   onClick={() => { setAddingPlayer(false); setNewPlayerName(''); setNewPlayerRole(undefined); }}>
@@ -1064,68 +1151,19 @@ function TeamCard({ team, isExpanded, onToggle, onDeleteTeam, onViewStats }: Tea
               </div>
             </div>
           ) : (
-            team.players.length < 50 && (
+            team.players.length < MAX_SQUAD && (
               <button
                 onClick={() => setAddingPlayer(true)}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-gold/30 text-gold text-sm font-semibold hover:bg-gold/10 transition-colors mt-1"
               >
                 <Plus size={16} /> Add Player
-                <span className="text-gold/40 text-xs font-normal">({team.players.length}/50)</span>
+                <span className="text-gold/40 text-xs font-normal">({team.players.length}/{MAX_SQUAD})</span>
               </button>
             )
           )}
 
-          {team.players.length >= 50 && (
-            <p className="text-muted text-xs text-center pt-1">Maximum 50 players reached</p>
-          )}
-
-          {/* Tournament / Stats Reset section */}
-          {team.players.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-pitch/60">
-              {!showTournamentReset ? (
-                <button
-                  onClick={() => setShowTournamentReset(true)}
-                  className={cn(
-                    'w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors',
-                    tournamentActive
-                      ? 'bg-safe/15 text-safe border border-safe/30 hover:bg-safe/20'
-                      : 'bg-pitch text-muted hover:text-white hover:bg-pitch-light border border-dashed border-white/10',
-                  )}
-                >
-                  <RotateCcw size={14} className="shrink-0" />
-                  <div className="text-left">
-                    <p className="leading-tight">
-                      {tournamentActive ? 'Tournament in progress' : 'New Tournament'}
-                    </p>
-                    <p className="text-[10px] font-normal opacity-70 leading-tight">
-                      {tournamentActive
-                        ? 'Tap to reset stats for a new tournament'
-                        : 'Reset stats to track this tournament only'}
-                    </p>
-                  </div>
-                </button>
-              ) : (
-                <div className="bg-pitch rounded-xl border border-safe/30 px-4 py-3 space-y-2.5">
-                  <p className="text-white text-sm font-bold">New tournament for {team.name}?</p>
-                  <p className="text-muted text-xs leading-relaxed">
-                    Stats on the Leaderboard will count from today. Your full match history is never deleted and you can switch back any time.
-                  </p>
-                  <div className="flex gap-2 flex-wrap">
-                    <Button variant="secondary" size="sm" fullWidth onClick={() => setShowTournamentReset(false)}>
-                      Cancel
-                    </Button>
-                    {tournamentActive && (
-                      <Button variant="secondary" size="sm" fullWidth onClick={handleShowAllTime}>
-                        Show All-Time
-                      </Button>
-                    )}
-                    <Button variant="gold" size="sm" fullWidth onClick={handleStartTournament}>
-                      🏆 Start Tournament
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
+          {team.players.length >= MAX_SQUAD && (
+            <p className="text-muted text-xs text-center pt-1">Maximum {MAX_SQUAD} players reached</p>
           )}
         </div>
       )}
@@ -1141,12 +1179,10 @@ interface PlayerRowProps {
   isEditing: boolean;
   editName: string;
   editRole: PlayerRole | undefined;
-  editSkill: SkillLevel;
   pendingDelete: boolean;
   onStartEdit: () => void;
   onChangeName: (v: string) => void;
   onChangeRole: (r: PlayerRole | undefined) => void;
-  onChangeSkill: (s: SkillLevel) => void;
   onSave: () => void;
   onCancel: () => void;
   onRemove: () => void;
@@ -1155,8 +1191,8 @@ interface PlayerRowProps {
 }
 
 function PlayerRow({
-  player, index, isEditing, editName, editRole, editSkill, pendingDelete,
-  onStartEdit, onChangeName, onChangeRole, onChangeSkill, onSave, onCancel, onRemove, canRemove, onViewStats,
+  player, index, isEditing, editName, editRole, pendingDelete,
+  onStartEdit, onChangeName, onChangeRole, onSave, onCancel, onRemove, canRemove, onViewStats,
 }: PlayerRowProps) {
   if (isEditing) {
     return (
@@ -1178,13 +1214,6 @@ function PlayerRow({
             </button>
           ))}
         </div>
-        <div className="flex gap-1.5 flex-wrap">
-          {SKILLS.map((lv) => (
-            <button key={lv} onClick={() => onChangeSkill(lv)} className={cn('px-2.5 py-1 rounded-lg text-xs font-bold transition-colors', editSkill === lv ? SKILL_COLORS[lv] : 'bg-pitch-light text-muted hover:text-white')}>
-              {SKILL_ICONS[lv]} Skill
-            </button>
-          ))}
-        </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" fullWidth onClick={onCancel}>Cancel</Button>
           <Button variant="gold" size="sm" fullWidth disabled={!editName.trim()} onClick={onSave}>Save</Button>
@@ -1200,14 +1229,6 @@ function PlayerRow({
         <PlayerAvatar name={player.name} size="xs" />
         <span className="text-white text-sm truncate">{player.name}</span>
       </button>
-      {player.skillLevel && (
-        <span
-          title={`Skill: ${SKILL_LABELS[player.skillLevel]}`}
-          className={cn('text-[10px] font-black px-2 py-0.5 rounded shrink-0 tracking-[0.12em]', SKILL_COLORS[player.skillLevel])}
-        >
-          {`${SKILL_ICONS[player.skillLevel]}${SKILL_ICONS[player.skillLevel]}${SKILL_ICONS[player.skillLevel]}`}
-        </span>
-      )}
       {player.role && (
         <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', ROLE_COLORS[player.role])}>
           {ROLE_LABELS[player.role]}

@@ -40,65 +40,13 @@ export async function removePlayerFromTeam(teamId: string, playerId: string): Pr
 export async function updatePlayerInTeam(
   teamId: string,
   playerId: string,
-  updates: Partial<Pick<SavedPlayer, 'name' | 'role'>>,
+  updates: Partial<Pick<SavedPlayer, 'name' | 'role' | 'skillLevel'>>,
 ): Promise<void> {
   const team = await db.savedTeams.get(teamId);
   if (!team) return;
   await db.savedTeams.put({
     ...team,
     players: team.players.map((p) => (p.id === playerId ? { ...p, ...updates } : p)),
-    updatedAt: Date.now(),
-  });
-}
-
-/** Reset stats baseline for a single player to now. */
-export async function resetPlayerBaseline(teamId: string, playerId: string): Promise<void> {
-  const team = await db.savedTeams.get(teamId);
-  if (!team) return;
-  const now = Date.now();
-  await db.savedTeams.put({
-    ...team,
-    players: team.players.map((p) =>
-      p.id === playerId ? { ...p, statsBaselineAt: now } : p,
-    ),
-    updatedAt: now,
-  });
-}
-
-/** Reset stats baseline for every player in a team to now. */
-export async function resetTeamBaseline(teamId: string): Promise<void> {
-  const team = await db.savedTeams.get(teamId);
-  if (!team) return;
-  const now = Date.now();
-  await db.savedTeams.put({
-    ...team,
-    statsBaselineAt: now,
-    players: team.players.map((p) => ({ ...p, statsBaselineAt: now })),
-    updatedAt: now,
-  });
-}
-
-/** Clear baselines — restore full history view. */
-export async function clearPlayerBaseline(teamId: string, playerId: string): Promise<void> {
-  const team = await db.savedTeams.get(teamId);
-  if (!team) return;
-  const now = Date.now();
-  await db.savedTeams.put({
-    ...team,
-    players: team.players.map((p) =>
-      p.id === playerId ? { ...p, statsBaselineAt: undefined } : p,
-    ),
-    updatedAt: now,
-  });
-}
-
-export async function clearTeamBaseline(teamId: string): Promise<void> {
-  const team = await db.savedTeams.get(teamId);
-  if (!team) return;
-  await db.savedTeams.put({
-    ...team,
-    statsBaselineAt: undefined,
-    players: team.players.map((p) => ({ ...p, statsBaselineAt: undefined })),
     updatedAt: Date.now(),
   });
 }
