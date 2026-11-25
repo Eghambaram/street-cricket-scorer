@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Share2, ClipboardList, Home, RefreshCw, CheckCircle2, Zap, Target, Undo2 } from 'lucide-react';
+import { Share2, ClipboardList, Home, RefreshCw, CheckCircle2, Zap, Target, Undo2, Trophy } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
@@ -14,6 +14,8 @@ import { formatDate, formatScore, formatOversShort } from '@/utils/format';
 import { buildShareText } from '@/utils/share';
 import { buildShareImage, shareImageOrFallback } from '@/utils/shareImage';
 import { useUIStore } from '@/store/uiStore';
+import { useSeasonStore } from '@/store/seasonStore';
+import { isAbandoned } from '@/utils/season';
 import { useMatch } from '@/hooks/useMatch';
 import { useScoring } from '@/hooks/useScoring';
 import type { Match, Innings } from '@/types/match.types';
@@ -28,6 +30,8 @@ export default function SummaryPage() {
   const [showUndoConfirm, setShowUndoConfirm] = useState(false);
   const [reopening, setReopening] = useState(false);
   const { addToast } = useUIStore();
+  const { seasons, loadSeasons } = useSeasonStore();
+  useEffect(() => { loadSeasons(); }, [loadSeasons]);
   const [loading, setLoading] = useState(true);
   const [match, setMatch] = useState<Match | null>(null);
   const [innings1, setInnings1] = useState<{ innings: Innings; stats: InningsStats } | null>(null);
@@ -115,8 +119,21 @@ export default function SummaryPage() {
     addToast('Man of the Match saved!', 'success');
   };
 
+  // Fix a wrong tag after the game (e.g. a casual game marked for the season)
+  const handleSeasonChange = async (seasonId: string | undefined) => {
+    if (!match) return;
+    const { seasonId: _old, ...rest } = match;
+    const updated: Match = seasonId ? { ...rest, seasonId } : rest;
+    await upsertMatch(updated);
+    setMatch(updated);
+    const name = seasons.find((s) => s.id === seasonId)?.name;
+    addToast(name ? `Counts for ${name}` : 'Marked as casual — not in season stats', 'success');
+  };
+
   if (loading) return <div className="min-h-screen bg-pitch flex items-center justify-center"><Spinner /></div>;
   if (!match) return null;
+
+  const abandoned = isAbandoned(match);
 
   const allPlayers = [...match.teams[0].players, ...match.teams[1].players];
   const winnerId   = match.result?.winnerId ?? null;
@@ -253,6 +270,30 @@ export default function SummaryPage() {
                 </div>
               ))}
             </div>
+
+            {/* ── SEASON STATS TAG ───────────────────────────────────────────── */}
+            {!match.config.isSinglePlayerMode && (
+              <div className="bg-pitch-light rounded-2xl px-4 py-3 flex items-center gap-3">
+                <Trophy size={16} className={match.seasonId && !abandoned ? 'text-gold shrink-0' : 'text-muted shrink-0'} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-muted font-black uppercase tracking-[2px]">Season stats</p>
+                  {abandoned ? (
+                    <p className="text-xs text-muted mt-0.5">Abandoned — never counts towards stats</p>
+                  ) : (
+                    <select
+                      value={match.seasonId ?? ''}
+                      onChange={(e) => handleSeasonChange(e.target.value || undefined)}
+                      className="mt-1 w-full bg-pitch border border-pitch-light rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-gold/50"
+                    >
+                      <option value="">Casual — not in season stats</option>
+                      {seasons.map((s) => (
+                        <option key={s.id} value={s.id}>Counts for {s.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* ── MAN OF THE MATCH ────────────────────────────────────────────── */}
             <div className="bg-pitch-light rounded-2xl overflow-hidden">

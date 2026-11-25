@@ -6,13 +6,16 @@ import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { useMatch } from '@/hooks/useMatch';
 import { useUIStore } from '@/store/uiStore';
+import { useSeasonStore } from '@/store/seasonStore';
 import { formatDate } from '@/utils/format';
 import { getTeamSize } from '@/utils/cricket';
 import { db } from '@/db/database';
 import { saveMatch } from '@/db/repos/matchRepo';
 import { saveInnings } from '@/db/repos/inningsRepo';
 import { addDelivery } from '@/db/repos/playerRepo';
+import { getAllSeasons, saveSeason } from '@/db/repos/seasonRepo';
 import type { Match, Innings } from '@/types/match.types';
+import type { Season } from '@/types/season.types';
 import type { Delivery } from '@/types/delivery.types';
 import { cn } from '@/utils/cn';
 
@@ -49,8 +52,8 @@ const GROUP_ORDER = ['Today', 'Yesterday', 'This Week', 'This Month', 'Earlier']
 // ─── Match Card ───────────────────────────────────────────────────────────────
 
 function MatchCard({
-  m, onNavigate, onDelete, onSwiped,
-}: { m: Match; onNavigate: () => void; onDelete: () => void; onSwiped?: () => void }) {
+  m, seasonName, onNavigate, onDelete, onSwiped,
+}: { m: Match; seasonName?: string; onNavigate: () => void; onDelete: () => void; onSwiped?: () => void }) {
   const [swipeX, setSwipeX]   = useState(0);
   const [revealed, setRevealed] = useState(false);
   const touchStartX   = useRef(0);
@@ -193,6 +196,12 @@ function MatchCard({
                 {m.config.overs} overs
                 <span className="mx-1 opacity-50">·</span>
                 {getTeamSize(m, m.teams[0].id)}v{getTeamSize(m, m.teams[1].id)}
+                {!m.config.isSinglePlayerMode && (
+                  <>
+                    <span className="mx-1 opacity-50">·</span>
+                    <span className={seasonName ? 'text-gold/70' : undefined}>{seasonName ?? 'Casual'}</span>
+                  </>
+                )}
               </p>
             </div>
 
@@ -223,6 +232,8 @@ export default function HistoryPage() {
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadMatches(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const { seasons, loadSeasons } = useSeasonStore();
+  useEffect(() => { loadSeasons(); }, [loadSeasons]);
 
   const filtered = useMemo(() => matches.filter((m) => {
     if (statusFilter === 'completed'   && m.status !== 'completed') return false;
@@ -253,7 +264,8 @@ export default function HistoryPage() {
   const handleExport = async () => {
     const allInnings   = await db.innings.toArray();
     const allDeliveries = await db.deliveries.toArray();
-    const payload = { version: 1, matches, innings: allInnings, deliveries: allDeliveries };
+    // Seasons travel with the backup so restored matches keep their season stats
+    const payload = { version: 1, matches, innings: allInnings, deliveries: allDeliveries, seasons: await getAllSeasons() };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -273,9 +285,11 @@ export default function HistoryPage() {
     setImporting(true);
     try {
       const data = JSON.parse(await file.text()) as {
-        version?: number; matches: Match[]; innings?: Innings[]; deliveries?: Delivery[];
+        version?: number; matches: Match[]; innings?: Innings[]; deliveries?: Delivery[]; seasons?: Season[];
       };
       if (!Array.isArray(data.matches)) throw new Error('Invalid file');
+      for (const s of data.seasons ?? []) { if (s.id && s.name) await saveSeason(s); }
+      await loadSeasons();
       let count = 0;
       for (const m of data.matches) { if (m.id && m.name) { await saveMatch(m); count++; } }
       for (const i of data.innings  ?? []) { if (i.id) await saveInnings(i); }
@@ -419,6 +433,7 @@ export default function HistoryPage() {
                   <MatchCard
                     key={m.id}
                     m={m}
+                    seasonName={seasons.find((s) => s.id === m.seasonId)?.name}
                     onNavigate={() => navigate(m.status === 'completed' ? `/match/${m.id}/scorecard` : `/match/${m.id}/scoring`)}
                     onDelete={() => setDeleteTarget(m)}
                     onSwiped={() => {}}

@@ -79,6 +79,8 @@ export interface Match {
   teams: [Team, Team];
   inningsIds: string[];
   result?: MatchResult;
+  /** Season this match counts towards. Absent = casual match, not in season stats. */
+  seasonId?: string;
 }
 
 export const DEFAULT_CONFIG: MatchConfig = {

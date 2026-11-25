@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FormProvider, useForm } from 'react-hook-form';
 import { v4 as uuid } from 'uuid';
-import { BookmarkPlus, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookmarkPlus, ChevronDown, ChevronUp, Trophy, UserX } from 'lucide-react';
 import { MatchConfigStep } from '@/components/setup/MatchConfigStep';
 import { TeamsStep } from '@/components/setup/TeamsStep';
 import { TossStep } from '@/components/setup/TossStep';
@@ -16,10 +16,14 @@ import { DEFAULT_CONFIG } from '@/types/match.types';
 import type { Match, Innings, Team, MatchConfig } from '@/types/match.types';
 import type { StreetCricketRules } from '@/types/rules.types';
 import { saveInnings } from '@/db/repos/inningsRepo';
-import { saveSavedTeam, getAllSavedTeams } from '@/db/repos/savedTeamRepo';
+import { saveSavedTeam, getAllSavedTeams, addPlayerToTeam } from '@/db/repos/savedTeamRepo';
 import type { SavedTeam } from '@/types/player.types';
 import { useFormContext } from 'react-hook-form';
 import { cn } from '@/utils/cn';
+import { useTeams } from '@/hooks/useTeams';
+import { useSeasonStore } from '@/store/seasonStore';
+import { getActiveSeason } from '@/utils/season';
+import { buildRosterIndex, isAutoName, linkToRoster } from '@/utils/roster';
 
 export interface NewMatchForm {
   name: string;
@@ -226,8 +230,8 @@ export default function SetupPage() {
   const location = useLocation();
   const rematch = (location.state as { rematch?: { teams: [Team, Team]; config?: MatchConfig } } | null)?.rematch;
   const rematchTeams = rematch?.teams;
-  // Original match format (overs, players/side, ball type). Absent when coming
-  // from the Team Generator, which has no previous match.
+  // Starting format (overs, players/side, ball type): the original match's on a
+  // rematch, or the Squad page's default (overs = bigger team's size).
   const rematchConfig = rematch?.config;
   const { upsertMatch } = useMatch();
   const { addToast } = useUIStore();
@@ -235,6 +239,14 @@ export default function SetupPage() {
   const [submitting, setSubmitting] = useState(false);
   const [saveTeamA, setSaveTeamA] = useState(false);
   const [saveTeamB, setSaveTeamB] = useState(false);
+
+  // Club roster + season: decide whether this match feeds the leaderboard
+  const { teams: savedTeams, loadTeams } = useTeams();
+  const { seasons, loadSeasons } = useSeasonStore();
+  const activeSeason = getActiveSeason(seasons);
+  const [countsForSeason, setCountsForSeason] = useState(true);
+  const [guestRosterTeamId, setGuestRosterTeamId] = useState<string | null>(null);
+  useEffect(() => { loadTeams(); loadSeasons(); }, [loadTeams, loadSeasons]);
 
   const teamAId = useRef(uuid()).current;
   const teamBId = useRef(uuid()).current;
@@ -308,13 +320,21 @@ export default function SetupPage() {
     return isSinglePlayer && n === 1 ? 0 : n;
   });
 
+  const roster = buildRosterIndex(savedTeams);
+  const seasonForMatch = activeSeason && countsForSeason && !isSinglePlayer ? activeSeason : undefined;
+  // Named players who are not on the club roster (their stats are not kept)
+  const guestNames = isSinglePlayer ? [] : formValues.teams
+    .flatMap((t) => t.players)
+    .filter((p) => p.name?.trim() && !isAutoName(p.name) && !roster.isRosterId(p.id) && !roster.idForName(p.name))
+    .map((p) => p.name.trim());
+
   const handleStart = async () => {
     setSubmitting(true);
     try {
       const values = methods.getValues();
       const playersPerSide = values.config.playersPerSide;
 
-      const teams = values.teams.map((t, i) => {
+      let teams = values.teams.map((t, i) => {
         const teamId = i === 0 ? teamAId : teamBId;
         // Single-player mode has no roster step: use the configured count.
         // Otherwise each team keeps its own roster size, so 7 vs 6 is allowed.
@@ -337,6 +357,14 @@ export default function SetupPage() {
           // Keep the captain only if they are still in the final squad
           captainId: resolvedPlayers.some((p) => p.id === t.captainId) ? t.captainId : undefined,
         };
+      }) as Match['teams'];
+
+      // Typed names that match the club roster take the roster player's id, so
+      // their stats reach the leaderboard. Everyone else plays as a guest.
+      const usedIds = new Set(teams.flatMap((t) => t.players.map((p) => p.id)));
+      teams = teams.map((t) => {
+        const { players, remap } = linkToRoster(t.players, roster, usedIds);
+        return { ...t, players, captainId: t.captainId ? remap.get(t.captainId) ?? t.captainId : undefined };
       }) as Match['teams'];
 
       const tossWinner = values.toss.winnerTeamId;
@@ -380,10 +408,20 @@ export default function SetupPage() {
         toss: { winnerTeamId: tossWinner, choice },
         teams,
         inningsIds: [inningsId],
+        seasonId: seasonForMatch?.id,
       };
 
       await upsertMatch(match);
       await saveInnings(innings);
+
+      // Optionally enrol guests in the roster with this match's ids, so this
+      // match already counts for them.
+      if (guestRosterTeamId) {
+        const newcomers = teams.flatMap((t) => t.players)
+          .filter((p) => !roster.isRosterId(p.id) && !isAutoName(p.name));
+        for (const p of newcomers) await addPlayerToTeam(guestRosterTeamId, { id: p.id, name: p.name });
+        if (newcomers.length > 0) await loadTeams();
+      }
 
       if (saveTeamA || saveTeamB) {
         const existingTeams = await getAllSavedTeams();
@@ -396,7 +434,8 @@ export default function SetupPage() {
           const saved: SavedTeam = {
             id: uuid(),
             name: t.name,
-            players: t.players.map((p) => ({ id: uuid(), name: p.name })),
+            // Same ids as the match, so this match counts for the saved players
+            players: t.players.map((p) => ({ id: p.id, name: p.name })),
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -470,6 +509,65 @@ export default function SetupPage() {
                   })()}
                 </div>
               </div>
+
+              {/* Season stats — does this match count? */}
+              {!isSinglePlayer && (
+                activeSeason ? (
+                  <label className="flex items-center gap-3 bg-pitch-light rounded-2xl px-4 py-3 cursor-pointer">
+                    <Trophy size={16} className={countsForSeason ? 'text-gold' : 'text-muted'} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white">Counts for {activeSeason.name} stats</p>
+                      <p className="text-xs text-muted">
+                        {countsForSeason ? 'Goes on the season leaderboard' : 'Casual match — not in season stats'}
+                      </p>
+                    </div>
+                    <div className="relative inline-flex items-center shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={countsForSeason}
+                        onChange={(e) => setCountsForSeason(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-pitch-dark rounded-full peer-checked:bg-gold transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+                    </div>
+                  </label>
+                ) : (
+                  <div className="flex items-center gap-3 bg-pitch-light rounded-2xl px-4 py-3">
+                    <Trophy size={16} className="text-muted shrink-0" />
+                    <p className="text-xs text-muted leading-relaxed">
+                      No season running, so this is a casual match. Start one from Teams → Leaderboard.
+                    </p>
+                  </div>
+                )
+              )}
+
+              {/* Guests — not on the club roster */}
+              {guestNames.length > 0 && (
+                <div className="bg-pitch-light rounded-2xl px-4 py-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <UserX size={15} className="text-amber shrink-0" />
+                    <p className="text-sm font-semibold text-white">
+                      {guestNames.length} not on the club roster
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    <span className="text-white">{guestNames.join(', ')}</span> will play as guests and their stats won't be kept.
+                    Check the spelling if they are regulars.
+                  </p>
+                  {savedTeams.length > 0 && (
+                    <select
+                      value={guestRosterTeamId ?? ''}
+                      onChange={(e) => setGuestRosterTeamId(e.target.value || null)}
+                      className="w-full bg-pitch border border-pitch-light rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-gold/50"
+                    >
+                      <option value="">Keep as guests (no stats)</option>
+                      {savedTeams.map((t) => (
+                        <option key={t.id} value={t.id}>Add to roster: {t.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
 
               {/* Rules — collapsible accordion */}
               <RulesAccordion />

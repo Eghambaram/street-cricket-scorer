@@ -13,7 +13,6 @@ export interface SavedPlayer {
   name: string;
   role?: PlayerRole;
   skillLevel?: SkillLevel;
-  statsBaselineAt?: number;  // epoch ms — stats counted from this date for this player
 }
 
 export interface SavedTeam {
@@ -22,7 +21,6 @@ export interface SavedTeam {
   players: SavedPlayer[];
   createdAt: number;
   updatedAt: number;
-  statsBaselineAt?: number;  // epoch ms — team-wide session start; overridden per player
 }
 
 export interface BatsmanScore {

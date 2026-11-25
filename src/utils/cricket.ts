@@ -240,11 +240,24 @@ export function getTeamSize(match: Match, teamId: string): number {
 /**
  * Add late-joining players to a team mid-match. The team's squad size grows with
  * its roster so all-out / last-man-stands checks count the new players.
+ * `rosterIdForName` lets a club roster player keep their id so the stats count.
  */
-export function addPlayersToTeam(match: Match, teamId: string, names: string[]): Match {
+export function addPlayersToTeam(
+  match: Match,
+  teamId: string,
+  names: string[],
+  rosterIdForName?: (name: string) => string | undefined,
+): Match {
   const team = match.teams.find((t) => t.id === teamId);
   if (!team || names.length === 0) return match;
-  const players = [...team.players, ...names.map((name) => ({ id: uuid(), name, teamId }))];
+  const usedIds = new Set(match.teams.flatMap((t) => t.players.map((p) => p.id)));
+  const newPlayers = names.map((name) => {
+    const rosterId = rosterIdForName?.(name);
+    const id = rosterId && !usedIds.has(rosterId) ? rosterId : uuid();
+    usedIds.add(id);
+    return { id, name, teamId };
+  });
+  const players = [...team.players, ...newPlayers];
   const teams = match.teams.map((t) => (t.id === teamId ? { ...t, players } : t)) as Match['teams'];
   const teamSizes = Object.fromEntries(teams.map((t) => [t.id, Math.max(getTeamSize(match, t.id), t.players.length)]));
   return {
