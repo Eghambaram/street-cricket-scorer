@@ -55,10 +55,15 @@ export default defineConfig({
           },
         ],
       },
-      devOptions: { enabled: true },
+      // Dev has no built assets to precache; silence workbox's empty-glob warning.
+      // Dev only — production builds still precache everything.
+      devOptions: { enabled: true, suppressWarnings: true },
     }),
   ],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  // exceljs is only imported lazily (Awards → Export Excel). Pre-bundle it so the
+  // dev server doesn't re-optimise mid-click and fail that first dynamic import.
+  optimizeDeps: { include: ['exceljs'] },
 });
