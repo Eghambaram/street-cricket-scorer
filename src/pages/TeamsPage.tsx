@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 import {
   Users, Plus, Trash2, ChevronDown, ChevronUp, Edit2, Check, X,
-  Trophy, TrendingUp, TrendingDown, Filter, CalendarDays, Info,
+  Trophy, TrendingUp, TrendingDown, Filter, CalendarDays, Info, Medal,
 } from 'lucide-react';
 import { TopBar } from '@/components/layout/TopBar';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { Spinner } from '@/components/common/Spinner';
 import { PlayerStatsModal } from '@/components/teams/PlayerStatsModal';
+import { AwardsView } from '@/components/teams/AwardsView';
 import { useTeams } from '@/hooks/useTeams';
 import { useUIStore } from '@/store/uiStore';
 import { useSeasonStore } from '@/store/seasonStore';
@@ -327,6 +328,7 @@ function LeaderboardTab({
   onViewStats: (id: string, name: string) => void;
 }) {
   const [mode, setMode] = useState<'batting' | 'bowling'>('batting');
+  const [showAwards, setShowAwards] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [matchCount, setMatchCount] = useState(0);
@@ -466,8 +468,8 @@ function LeaderboardTab({
         </button>
       )}
 
-      {/* ── Team filter chips (only when multiple teams) ── */}
-      {teams.length > 1 && (
+      {/* ── Team filter chips (only when multiple teams; awards are club-wide) ── */}
+      {teams.length > 1 && !showAwards && (
         <div className="flex gap-2 px-4 pb-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setSelectedTeamId(null)}
@@ -493,29 +495,40 @@ function LeaderboardTab({
         </div>
       )}
 
-      {/* ── Batting / Bowling toggle ── */}
+      {/* ── Batting / Bowling / Awards toggle ── */}
       <div className="flex mx-4 mb-3 bg-pitch-light rounded-xl p-1">
         <button
-          onClick={() => setMode('batting')}
+          onClick={() => { setMode('batting'); setShowAwards(false); }}
           className={cn(
             'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all',
-            mode === 'batting' ? 'bg-runs/90 text-pitch-dark' : 'text-muted',
+            !showAwards && mode === 'batting' ? 'bg-runs/90 text-pitch-dark' : 'text-muted',
           )}
         >
           <TrendingUp size={15} /> Batting
         </button>
         <button
-          onClick={() => setMode('bowling')}
+          onClick={() => { setMode('bowling'); setShowAwards(false); }}
           className={cn(
             'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all',
-            mode === 'bowling' ? 'bg-amber/90 text-pitch-dark' : 'text-muted',
+            !showAwards && mode === 'bowling' ? 'bg-amber/90 text-pitch-dark' : 'text-muted',
           )}
         >
           <TrendingDown size={15} /> Bowling
         </button>
+        <button
+          onClick={() => setShowAwards(true)}
+          className={cn(
+            'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold transition-all',
+            showAwards ? 'bg-gold text-pitch-dark' : 'text-muted',
+          )}
+        >
+          <Medal size={15} /> Awards
+        </button>
       </div>
 
-      {loadingLb ? (
+      {showAwards ? (
+        <AwardsView season={season} teams={teams} />
+      ) : loadingLb ? (
         <div className="flex justify-center py-12"><Spinner /></div>
       ) : !hasAnyData ? (
         <NoDataState mode={mode} range={season?.name ?? 'all matches'} />
